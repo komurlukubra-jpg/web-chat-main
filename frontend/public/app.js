@@ -171,6 +171,26 @@ function getCurrentChannel() {
   return null;
 }
 
+function getServerChannels(server) {
+  if (!server) {
+    return [];
+  }
+  return server.categories.flatMap((category) => category.channels.map((channel) => ({ ...channel, categoryName: category.name })));
+}
+
+function getFirstTextChannel(server = getCurrentServer()) {
+  return getServerChannels(server).find((channel) => channel.kind === 'text') || null;
+}
+
+function getFirstVoiceChannel(server = getCurrentServer()) {
+  return getServerChannels(server).find((channel) => channel.kind === 'voice') || null;
+}
+
+function getLastDmMessage(username) {
+  const messages = appState.directMessages[username] || [];
+  return messages[messages.length - 1] || null;
+}
+
 function getCurrentVoiceMembers() {
   return appState.voicePresence[currentVoiceChannelId] || [];
 }
@@ -625,6 +645,30 @@ function renderHeader() {
   pinnedMessageText.textContent = getPinnedMessage();
 }
 
+function renderComposerState() {
+  const channel = getCurrentChannel();
+  if (isDmConversation()) {
+    messageInput.placeholder = `${activeDmUser} kullanicisina mesaj gonder`;
+    sendBtn.textContent = 'Gonder';
+    messageInput.disabled = false;
+    sendBtn.disabled = false;
+    return;
+  }
+
+  if (channel?.kind === 'voice') {
+    messageInput.placeholder = 'Sesli odada yazi yerine katil veya gorusme baslat';
+    sendBtn.textContent = 'Ses';
+    messageInput.disabled = true;
+    sendBtn.disabled = true;
+    return;
+  }
+
+  messageInput.placeholder = `${channel?.name || 'kanal'} kanalina mesaj gonder`;
+  sendBtn.textContent = 'Gonder';
+  messageInput.disabled = false;
+  sendBtn.disabled = false;
+}
+
 function renderMessages() {
   chatArea.innerHTML = '';
   const list = getActiveConversationMessages();
@@ -653,7 +697,7 @@ function renderMessages() {
     }
 
     const row = document.createElement('div');
-    row.className = `message-row ${isDmThread ? 'dm-thread' : ''}`;
+    row.className = `message-row ${isDmThread ? `dm-thread ${message.user === currentUser ? 'mine' : 'theirs'}` : ''}`;
     const reactions = isDmThread
       ? ''
       : Object.entries(message.reactions || {})
@@ -675,7 +719,7 @@ function renderMessages() {
       <div class="message-content">
         <div class="message-meta">
           <span class="message-author">${escapeHtml(message.user)}</span>
-          ${roleBadgeMarkup(message.user)}
+          ${!isDmThread ? roleBadgeMarkup(message.user) : ''}
           <span>${formatTime(message.time)}</span>
           ${message.editedAt ? '<span>(duzenlendi)</span>' : ''}
           ${isDmConversation() && message.user === currentUser && activeDmUser
@@ -816,20 +860,39 @@ function renderMembers() {
 
 function renderDmList() {
   dmList.innerHTML = '';
-  const users = appState.users.filter((user) => user.username !== currentUser);
+  const users = appState.users
+    .filter((user) => user.username !== currentUser)
+    .sort((a, b) => {
+      const aLast = getLastDmMessage(a.username)?.time || 0;
+      const bLast = getLastDmMessage(b.username)?.time || 0;
+      if (aLast !== bLast) {
+        return bLast - aLast;
+      }
+      return a.username.localeCompare(b.username, 'tr');
+    });
   membersPanelTitle.textContent = 'DM';
   membersPanelSubtitle.textContent = `${users.length} kullanici ile direkt mesaj`;
   membersCountPill.textContent = String(users.length);
   dmList.innerHTML = users.map((user) => `
     ${(() => {
       const presence = appState.presence[user.username]?.status || 'offline';
+      const lastMessage = getLastDmMessage(user.username);
+      const preview = lastMessage
+        ? `${lastMessage.user === currentUser ? 'Sen: ' : ''}${lastMessage.text}`
+        : 'Henuz direkt mesaj yok';
       return `
     <div class="dm-row">
       <button class="dm-user ${activeDmUser === user.username ? 'active' : ''}" data-username="${user.username}">
-        <span>${escapeHtml(user.username)}</span>
-        <span style="display:flex; gap:8px; align-items:center;">
-          ${unreadDmCounts[user.username] ? `<span class="badge-dot">${unreadDmCounts[user.username]}</span>` : ''}
-          <span class="presence ${presence}">${presence}</span>
+        <span class="dm-user-top">
+          <strong>${escapeHtml(user.username)}</strong>
+          <span style="display:flex; gap:8px; align-items:center;">
+            ${unreadDmCounts[user.username] ? `<span class="badge-dot">${unreadDmCounts[user.username]}</span>` : ''}
+            <span class="presence ${presence}">${presence}</span>
+          </span>
+        </span>
+        <span class="dm-user-bottom">
+          <span class="dm-preview">${escapeHtml(preview)}</span>
+          <span class="report-meta">${lastMessage ? formatTime(lastMessage.time) : ''}</span>
         </span>
       </button>
       <button class="mini-action-btn dm-profile-btn" data-username="${user.username}">Profil</button>
@@ -1029,6 +1092,7 @@ function renderAll() {
   renderServers();
   renderChannels();
   renderHeader();
+  renderComposerState();
   renderMessages();
   renderMembers();
   renderSidebarTab();
@@ -1774,11 +1838,11 @@ function toggleCamera() {
 }
 
 function showSearchModal() {
-  const list = (appState.messages[currentChannelId] || []).slice(-20);
+  const list = getActiveConversationMessages().slice(-40);
   showModal(`
-    <h2>Kanalda Ara</h2>
+    <h2>${isDmConversation() ? 'DM icinde ara' : 'Kanalda Ara'}</h2>
     <input id="searchInput" class="modal-input" placeholder="Kelime yaz" />
-    <div id="searchResults" class="panel-subtitle">Son 20 mesaj aranacak.</div>
+    <div id="searchResults" class="panel-subtitle">Son 40 mesaj aranacak.</div>
   `);
 
   const input = document.getElementById('searchInput');
@@ -1790,7 +1854,7 @@ function showSearchModal() {
       ? (matches.length
           ? matches.map((message) => `<div class="report-card"><strong>${escapeHtml(message.user)}</strong><div>${escapeHtml(message.text)}</div></div>`).join('')
           : 'Mesaj bulunamadi.')
-      : 'Son 20 mesaj aranacak.';
+      : 'Son 40 mesaj aranacak.';
   };
 }
 
@@ -1803,6 +1867,113 @@ function showPinnedInfo() {
     <div class="report-card"><strong>Kanal</strong><div>${escapeHtml(channel?.name || '-')}</div></div>
     <div class="report-card"><strong>Rolun</strong><div>${escapeHtml(myRole())}</div></div>
   `);
+}
+
+function showServerOverview() {
+  const server = getCurrentServer();
+  if (!server) {
+    return;
+  }
+  const textChannel = getFirstTextChannel(server);
+  const voiceChannel = getFirstVoiceChannel(server);
+  const openReportCount = server.reports.filter((report) => report.status === 'open').length;
+  showModal(`
+    <h2>Sunucu Genel Bakis</h2>
+    <div class="report-card"><strong>${escapeHtml(server.name)}</strong><div class="report-meta">${server.members.length} uye, ${server.categories.length} kategori</div></div>
+    <div class="report-card"><strong>Hizli Gecis</strong><div class="report-meta">Metin kanali: ${escapeHtml(textChannel?.name || '-')} | Sesli oda: ${escapeHtml(voiceChannel?.name || '-')}</div></div>
+    <div class="report-card"><strong>Acik rapor</strong><div>${openReportCount}</div></div>
+    <button id="overviewChatBtn" class="modal-btn primary">Sohbete Don</button>
+    <button id="overviewToolsBtn" class="modal-btn secondary">Sunucu Araclari</button>
+  `);
+
+  document.getElementById('overviewChatBtn').onclick = () => {
+    hideModal();
+    if (textChannel) {
+      switchChannel(textChannel.id);
+    } else {
+      renderAll();
+    }
+  };
+  document.getElementById('overviewToolsBtn').onclick = () => {
+    hideModal();
+    showUtilityHub();
+  };
+}
+
+function showUtilityHub() {
+  renderReports();
+  renderPolls();
+  renderPermissions();
+  showModal(`
+    <h2>Sunucu Araclari</h2>
+    <div class="report-card"><strong>Raporlar</strong></div>
+    ${reportList.innerHTML}
+    <div class="report-card"><strong>Anketler</strong></div>
+    ${pollList.innerHTML}
+    <div class="report-card"><strong>Izin Matrisi</strong></div>
+    ${permissionsList.innerHTML}
+    <button id="utilityRoleBtn" class="modal-btn secondary">Rol Yonetimi</button>
+    <button id="utilityModBtn" class="modal-btn secondary">Moderasyon</button>
+  `);
+
+  document.getElementById('utilityRoleBtn').onclick = () => {
+    hideModal();
+    assignRole();
+  };
+  document.getElementById('utilityModBtn').onclick = () => {
+    hideModal();
+    moderateUser();
+  };
+}
+
+function showCallHub() {
+  const server = getCurrentServer();
+  if (!server) {
+    return;
+  }
+
+  renderVoicePanel();
+  renderVideoPanel();
+
+  const voiceChannel = getCurrentChannel()?.kind === 'voice'
+    ? getCurrentChannel()
+    : (getFirstVoiceChannel(server) || null);
+
+  showModal(`
+    <h2>Ses ve Goruntulu Konusma</h2>
+    <div class="report-card"><strong>Hedef oda</strong><div class="report-meta">${escapeHtml(voiceChannel?.name || 'Sesli kanal yok')}</div></div>
+    <div class="report-card">${voicePanel.innerHTML}</div>
+    <div class="report-card">${videoPanel.innerHTML}</div>
+    <button id="callGoBtn" class="modal-btn primary">Sesli Odaya Git</button>
+    <button id="callJoinBtn" class="modal-btn secondary">Voice Katil</button>
+    <button id="callStartBtn" class="modal-btn secondary">Goruntulu Baslat</button>
+    <button id="callEndBtn" class="modal-btn secondary">Goruntulu Bitir</button>
+  `);
+
+  document.getElementById('callGoBtn').onclick = () => {
+    hideModal();
+    if (voiceChannel) {
+      switchChannel(voiceChannel.id);
+    }
+  };
+  document.getElementById('callJoinBtn').onclick = () => {
+    hideModal();
+    if (voiceChannel && getCurrentChannel()?.id !== voiceChannel.id) {
+      switchChannel(voiceChannel.id);
+    }
+    joinVoice();
+  };
+  document.getElementById('callStartBtn').onclick = () => {
+    hideModal();
+    if (voiceChannel && getCurrentChannel()?.id !== voiceChannel.id) {
+      switchChannel(voiceChannel.id);
+    }
+    startVideoCall();
+  };
+  document.getElementById('callEndBtn').onclick = () => {
+    hideModal();
+    endVideoCall();
+  };
 }
 
 function openQuickActions() {
@@ -1835,14 +2006,36 @@ function toggleMembersPanel() {
   sidebar.classList.toggle('hidden-panel');
 }
 
-function handleNavInfo(section) {
-  const texts = {
-    home: 'Sunucu genel panelindesin.',
-    chat: 'Sohbet moduna geri donuldu.',
-    game: 'Oyunlar ikonu simdilik demo bilgilendirme aciyor.',
-    apps: 'Araclar ikonu kanal yonetimini temsil ediyor.'
-  };
-  showToast(texts[section]);
+function handleNavAction(section) {
+  if (section === 'home') {
+    showServerOverview();
+    return;
+  }
+
+  if (section === 'chat') {
+    const preferredChannel = getCurrentChannel()?.kind === 'text'
+      ? getCurrentChannel()
+      : getFirstTextChannel();
+    activeConversationType = 'channel';
+    activeSidebarTab = 'members';
+    activeDmUser = null;
+    if (preferredChannel) {
+      switchChannel(preferredChannel.id);
+    } else {
+      renderAll();
+    }
+    syncMobileViewAfterSelection('chat');
+    return;
+  }
+
+  if (section === 'game') {
+    showCallHub();
+    return;
+  }
+
+  if (section === 'apps') {
+    showUtilityHub();
+  }
 }
 
 window.onload = () => {
@@ -1912,7 +2105,7 @@ window.onload = () => {
   endVideoBtn.onclick = endVideoCall;
   toggleMicBtn.onclick = toggleMic;
   toggleCameraBtn.onclick = toggleCamera;
-  videoBtn.onclick = startVideoCall;
+  videoBtn.onclick = showCallHub;
   searchBtn.onclick = showSearchModal;
   pinBtn.onclick = showPinnedInfo;
   membersToggleBtn.onclick = toggleMembersPanel;
@@ -1936,7 +2129,9 @@ window.onload = () => {
   dmTabBtn.onclick = () => {
     activeSidebarTab = 'dm';
     if (!activeDmUser) {
-      activeDmUser = appState.users.find((user) => user.username !== currentUser)?.username || null;
+      activeDmUser = appState.users
+        .filter((user) => user.username !== currentUser)
+        .sort((a, b) => (getLastDmMessage(b.username)?.time || 0) - (getLastDmMessage(a.username)?.time || 0))[0]?.username || null;
     }
     if (activeDmUser) {
       openDm(activeDmUser);
@@ -1945,10 +2140,10 @@ window.onload = () => {
     }
   };
   composerAddBtn.onclick = openQuickActions;
-  navHomeBtn.onclick = () => handleNavInfo('home');
-  navChatBtn.onclick = () => handleNavInfo('chat');
-  navGameBtn.onclick = () => handleNavInfo('game');
-  navAppsBtn.onclick = () => handleNavInfo('apps');
+  navHomeBtn.onclick = () => handleNavAction('home');
+  navChatBtn.onclick = () => handleNavAction('chat');
+  navGameBtn.onclick = () => handleNavAction('game');
+  navAppsBtn.onclick = () => handleNavAction('apps');
 
   presenceSelect.onchange = async () => {
     try {
