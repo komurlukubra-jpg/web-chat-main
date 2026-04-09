@@ -1667,6 +1667,10 @@
       font-size: 14px;
     }
 
+    .app-shell.hidden ~ .mobile-nav {
+      display: none !important;
+    }
+
     .video-panel {
       display: grid;
       gap: 10px;
@@ -2828,6 +2832,7 @@
 
       .workspace {
         background: var(--panel);
+        grid-template-rows: 58px minmax(0, 1fr) auto !important;
       }
 
       .workspace-header {
@@ -2855,7 +2860,8 @@
       }
 
       .chat-area {
-        padding: 4px 0 6px;
+        padding: 8px 0 12px;
+        min-height: 0;
       }
 
       .date-divider {
@@ -2888,6 +2894,7 @@
       .composer {
         padding: 10px var(--mobile-edge) calc(14px + env(safe-area-inset-bottom));
         border-top: 1px solid var(--line-soft);
+        margin-bottom: 0;
       }
 
       .composer-row {
@@ -3018,11 +3025,16 @@
         min-height: 46px;
         border-radius: 14px;
       }
+
+      .chat-empty {
+        margin: auto var(--mobile-edge) 0;
+        max-width: none;
+      }
     }
   </style>
 </head>
 <body>
-  <div id="appShell" class="app-shell" data-mobile-view="chat">
+  <div id="appShell" class="app-shell hidden" data-mobile-view="chat">
     <aside class="servers" data-mobile-section="servers">
       <section class="mobile-pane-header">
         <div class="mobile-pane-kicker">Topluluk</div>

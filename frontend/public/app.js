@@ -2152,12 +2152,17 @@ async function bootstrap() {
   appState = data;
   currentUser = data.currentUser?.username || currentUser;
   unreadDmCounts = {};
-  currentServerId = appState.servers[0]?.id || null;
-  currentChannelId = appState.servers[0]?.categories[0]?.channels[0]?.id || null;
+  const initialServer = appState.servers[0] || null;
+  const initialChannel = getFirstTextChannel(initialServer) || getServerChannels(initialServer)[0] || null;
+  currentServerId = initialServer?.id || null;
+  currentChannelId = initialChannel?.id || null;
+  activeConversationType = 'channel';
+  activeDmUser = null;
   currentVoiceChannelId = appState.presence[currentUser]?.voiceChannelId || null;
   appState.callPresence = appState.callPresence || {};
   presenceSelect.value = appState.currentUser?.preferredStatus || appState.presence[currentUser]?.status || 'online';
   renderAll();
+  document.getElementById('appShell').classList.remove('hidden');
   connectWS();
 }
 
@@ -2172,16 +2177,21 @@ function showLogin() {
   `);
 
   document.getElementById('loginSubmit').onclick = async () => {
+    const submitBtn = document.getElementById('loginSubmit');
     try {
       const username = document.getElementById('loginUser').value.trim();
       const password = document.getElementById('loginPass').value;
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Yukleniyor...';
       const result = await request(API.login, { method: 'POST', body: JSON.stringify({ username, password }) });
       currentUser = result.username || username;
       shouldReconnect = true;
+      document.getElementById('appShell').classList.add('hidden');
+      await bootstrap();
       hideModal();
-      document.getElementById('appShell').classList.remove('hidden');
-      bootstrap();
     } catch (error) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Giris Yap';
       alert(error.message);
     }
   };
