@@ -40,6 +40,7 @@ let notificationsEnabled = false;
 let mobileView = 'chat';
 let replyTarget = null;
 let shouldReconnect = true;
+let pendingAttachments = [];
 const peerConnections = new Map();
 const remoteStreams = new Map();
 let lastCallCapabilityMessage = '';
@@ -53,6 +54,8 @@ const pinnedMessageText = document.getElementById('pinnedMessageText');
 const presenceSelect = document.getElementById('presenceSelect');
 const messageInput = document.getElementById('messageInput');
 const replyPreview = document.getElementById('replyPreview');
+const attachmentPreview = document.getElementById('attachmentPreview');
+const attachmentInput = document.getElementById('attachmentInput');
 const sendBtn = document.getElementById('sendBtn');
 const chatArea = document.getElementById('chatArea');
 const memberList = document.getElementById('memberList');
@@ -200,8 +203,24 @@ function getCurrentVoiceMembers() {
   return appState.voicePresence[currentVoiceChannelId] || [];
 }
 
+function getChannelById(channelId, server = getCurrentServer()) {
+  return getServerChannels(server).find((channel) => channel.id === channelId) || null;
+}
+
+function getCallChannel() {
+  const currentChannel = getCurrentChannel();
+  if (currentChannel?.kind === 'voice') {
+    return currentChannel;
+  }
+  if (currentVoiceChannelId) {
+    return getChannelById(currentVoiceChannelId);
+  }
+  return null;
+}
+
 function getCurrentCallMembers() {
-  return appState.callPresence[activeCallChannelId || currentChannelId] || [];
+  const callChannelId = activeCallChannelId || currentVoiceChannelId || currentChannelId;
+  return appState.callPresence[callChannelId] || [];
 }
 
 function isDmConversation() {
@@ -244,6 +263,18 @@ function explainMediaError(error) {
     return 'Kamera veya mikrofon baska bir uygulama tarafindan kullaniliyor olabilir.';
   }
   return 'Goruntulu konusma baslatilamadi.';
+}
+
+function playVideoElement(element, muted = false) {
+  if (!element) {
+    return;
+  }
+  element.muted = muted;
+  const tryPlay = () => {
+    element.play?.().catch(() => {});
+  };
+  element.onloadedmetadata = tryPlay;
+  tryPlay();
 }
 
 async function ensureNotificationsEnabled() {
@@ -455,6 +486,97 @@ function replyMarkup(message) {
   `;
 }
 
+function isImageAttachment(attachment) {
+  return String(attachment?.type || '').startsWith('image/');
+}
+
+function attachmentMarkup(attachment) {
+  if (!attachment?.dataUrl) {
+    return '';
+  }
+
+  if (isImageAttachment(attachment)) {
+    return `
+      <a class="attachment-card image" href="${attachment.dataUrl}" download="${escapeHtml(attachment.name || 'image')}">
+        <img src="${attachment.dataUrl}" alt="${escapeHtml(attachment.name || 'attachment')}" />
+        <span>${escapeHtml(attachment.name || 'Gorsel')}</span>
+      </a>
+    `;
+  }
+
+  return `
+    <a class="attachment-card" href="${attachment.dataUrl}" download="${escapeHtml(attachment.name || 'dosya')}">
+      <strong>${escapeHtml(attachment.name || 'Dosya')}</strong>
+      <span>${escapeHtml(attachment.type || 'file')}</span>
+    </a>
+  `;
+}
+
+function renderAttachmentPreview() {
+  if (!attachmentPreview) {
+    return;
+  }
+
+  if (!pendingAttachments.length) {
+    attachmentPreview.classList.add('hidden');
+    attachmentPreview.innerHTML = '';
+    return;
+  }
+
+  attachmentPreview.classList.remove('hidden');
+  attachmentPreview.innerHTML = pendingAttachments.map((attachment, index) => `
+    <div class="attachment-pill">
+      <span>${escapeHtml(attachment.name)}</span>
+      <button type="button" class="tiny-action" data-attachment-remove="${index}">Sil</button>
+    </div>
+  `).join('');
+
+  attachmentPreview.querySelectorAll('[data-attachment-remove]').forEach((button) => {
+    button.onclick = () => {
+      pendingAttachments = pendingAttachments.filter((_, idx) => String(idx) !== button.dataset.attachmentRemove);
+      renderAttachmentPreview();
+    };
+  });
+}
+
+function clearPendingAttachments() {
+  pendingAttachments = [];
+  if (attachmentInput) {
+    attachmentInput.value = '';
+  }
+  renderAttachmentPreview();
+}
+
+async function loadAttachmentFiles(files) {
+  const selectedFiles = [...(files || [])].slice(0, 3 - pendingAttachments.length);
+  const loaded = [];
+
+  for (const file of selectedFiles) {
+    if (file.size > 2_000_000) {
+      showToast(`${file.name} 2 MB sinirini asiyor.`);
+      continue;
+    }
+
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error(`${file.name} okunamadi.`));
+      reader.readAsDataURL(file);
+    });
+
+    loaded.push({
+      id: `att_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      name: file.name,
+      type: file.type || 'application/octet-stream',
+      size: file.size,
+      dataUrl
+    });
+  }
+
+  pendingAttachments = [...pendingAttachments, ...loaded].slice(0, 3);
+  renderAttachmentPreview();
+}
+
 function userInitials(username) {
   return (username || '?').trim().slice(0, 1).toUpperCase();
 }
@@ -519,6 +641,7 @@ function cleanupCallUi() {
 
 function renderVideoPanel() {
   const participants = getCurrentCallMembers();
+  const callChannel = getCallChannel();
   const hasCall = Boolean(localStream || participants.length || remoteStreams.size);
   const hasAudioTrack = Boolean(localStream?.getAudioTracks().length);
   const hasVideoTrack = Boolean(localStream?.getVideoTracks().length);
@@ -559,7 +682,7 @@ function renderVideoPanel() {
   }
 
   videoPanel.innerHTML = `
-    <div class="panel-subtitle">Kanal: ${escapeHtml((getCurrentServer()?.categories.flatMap((category) => category.channels).find((channel) => channel.id === (activeCallChannelId || currentChannelId))?.name) || '-')}</div>
+    <div class="panel-subtitle">Kanal: ${escapeHtml(callChannel?.name || '-')}</div>
     <div class="panel-subtitle">Katilimcilar: ${participants.join(', ') || currentUser}</div>
     <div class="panel-subtitle">Durum: ${localStream ? 'Goruntulu konusma acik' : 'Baglanti bekleniyor'}</div>
     ${lastCallCapabilityMessage ? `<div class="panel-subtitle">${escapeHtml(lastCallCapabilityMessage)}</div>` : ''}
@@ -570,6 +693,7 @@ function renderVideoPanel() {
     const localVideo = document.getElementById('localVideo');
     if (localVideo) {
       localVideo.srcObject = localStream;
+      playVideoElement(localVideo, true);
     }
   }
 
@@ -577,6 +701,7 @@ function renderVideoPanel() {
     const el = document.getElementById(`remoteVideo_${username}`);
     if (el) {
       el.srcObject = stream;
+      playVideoElement(el, false);
     }
   }
 }
@@ -656,6 +781,35 @@ async function ensureLocalMedia() {
   }
 
   throw lastError || new Error('Kamera veya mikrofon acilamadi.');
+}
+
+async function ensureVideoTrack() {
+  if (!localStream) {
+    await ensureLocalMedia();
+  }
+
+  if (localStream?.getVideoTracks().length) {
+    return localStream;
+  }
+
+  const cameraStream = await navigator.mediaDevices.getUserMedia({ video: true });
+  const [videoTrack] = cameraStream.getVideoTracks();
+  if (!videoTrack) {
+    throw new Error('Kamera acilamadi.');
+  }
+
+  localStream.addTrack(videoTrack);
+  cameraEnabled = true;
+
+  for (const [peerUsername, pc] of peerConnections.entries()) {
+    pc.addTrack(videoTrack, localStream);
+    if (currentUser < peerUsername) {
+      initiateOffer(peerUsername).catch(() => {});
+    }
+  }
+
+  renderVideoPanel();
+  return localStream;
 }
 
 async function initiateOffer(peerUsername) {
@@ -775,6 +929,7 @@ function renderHeader() {
 function renderComposerState() {
   const channel = getCurrentChannel();
   renderReplyComposer();
+  renderAttachmentPreview();
   if (isDmConversation()) {
     messageInput.placeholder = `${activeDmUser} kullanicisina mesaj gonder`;
     sendBtn.textContent = 'Gonder';
@@ -835,17 +990,16 @@ function renderMessages() {
             return `<button class="reaction-chip ${active}" data-message-id="${message.id}" data-emoji="${emoji}">${emoji} ${users.length}</button>`;
           })
           .join('');
-    const controls = !isDmThread
-      ? `
-        <div class="message-controls">
-          <button class="tiny-action" data-action="reply" data-message-id="${message.id}">Yanitla</button>
-          ${canManageMessage(message) ? `
-            <button class="tiny-action" data-action="edit" data-message-id="${message.id}">Duzenle</button>
-            <button class="tiny-action danger" data-action="delete" data-message-id="${message.id}">Sil</button>
-          ` : ''}
-        </div>
-      `
-      : '';
+    const canEditOrDelete = isDmThread ? message.user === currentUser : canManageMessage(message);
+    const controls = `
+      <div class="message-controls">
+        <button class="tiny-action" data-action="reply" data-message-id="${message.id}">Yanitla</button>
+        ${canEditOrDelete ? `
+          <button class="tiny-action" data-action="edit" data-message-id="${message.id}">Duzenle</button>
+          <button class="tiny-action danger" data-action="delete" data-message-id="${message.id}">Sil</button>
+        ` : ''}
+      </div>
+    `;
     row.innerHTML = `
       ${avatarMarkup(message.user)}
       <div class="message-content">
@@ -860,7 +1014,8 @@ function renderMessages() {
         </div>
         <div class="message-stack">
           ${replyMarkup(message)}
-          <div class="message-body ${messageMentionsUser(message.text) ? 'mentioned' : ''}">${renderMessageText(message.text)}</div>
+          ${message.text ? `<div class="message-body ${messageMentionsUser(message.text) ? 'mentioned' : ''}">${renderMessageText(message.text)}</div>` : ''}
+          ${(message.attachments || []).length ? `<div class="attachments-row">${(message.attachments || []).map(attachmentMarkup).join('')}</div>` : ''}
           <div class="reactions-row">${reactions}</div>
           <div class="message-actions-row">
             <div class="reaction-palette">
@@ -905,49 +1060,67 @@ function renderMessages() {
       };
     });
 
-    chatArea.querySelectorAll('.tiny-action').forEach((button) => {
-      button.onclick = () => {
-        const messageId = button.dataset.messageId;
-        const action = button.dataset.action;
-        const targetMessage = (appState.messages[currentChannelId] || []).find((message) => message.id === messageId);
-        if (action === 'reply') {
-          setReplyTarget(targetMessage);
-          return;
-        }
-        if (action === 'delete') {
-          ws.send(JSON.stringify({
-            type: 'deleteMessage',
-            serverId: currentServerId,
-            channelId: currentChannelId,
-            username: currentUser,
-            messageId
-          }));
-          return;
-        }
-
-        const nextText = prompt('Mesaji duzenle:', targetMessage?.text || '');
-        if (nextText && nextText.trim()) {
-          ws.send(JSON.stringify({
-            type: 'editMessage',
-            serverId: currentServerId,
-            channelId: currentChannelId,
-            username: currentUser,
-            messageId,
-            text: nextText.trim()
-          }));
-        }
-      };
-    });
-
-    chatArea.querySelectorAll('[data-reply-origin]').forEach((button) => {
-      button.onclick = () => {
-        const originMessage = (appState.messages[currentChannelId] || []).find((message) => message.id === button.dataset.replyOrigin);
-        if (originMessage) {
-          setReplyTarget(originMessage);
-        }
-      };
-    });
   }
+
+  chatArea.querySelectorAll('.tiny-action').forEach((button) => {
+    button.onclick = () => {
+      const messageId = button.dataset.messageId;
+      const action = button.dataset.action;
+      const listSource = isDmThread ? (appState.directMessages[activeDmUser] || []) : (appState.messages[currentChannelId] || []);
+      const targetMessage = listSource.find((message) => message.id === messageId);
+      if (action === 'reply') {
+        setReplyTarget(targetMessage);
+        return;
+      }
+      if (action === 'delete') {
+        ws.send(JSON.stringify(isDmThread
+          ? {
+              type: 'deleteDmMessage',
+              username: currentUser,
+              peerUsername: activeDmUser,
+              messageId
+            }
+          : {
+              type: 'deleteMessage',
+              serverId: currentServerId,
+              channelId: currentChannelId,
+              username: currentUser,
+              messageId
+            }));
+        return;
+      }
+
+      const nextText = prompt('Mesaji duzenle:', targetMessage?.text || '');
+      if (nextText && nextText.trim()) {
+        ws.send(JSON.stringify(isDmThread
+          ? {
+              type: 'editDmMessage',
+              username: currentUser,
+              peerUsername: activeDmUser,
+              messageId,
+              text: nextText.trim()
+            }
+          : {
+              type: 'editMessage',
+              serverId: currentServerId,
+              channelId: currentChannelId,
+              username: currentUser,
+              messageId,
+              text: nextText.trim()
+            }));
+      }
+    };
+  });
+
+  chatArea.querySelectorAll('[data-reply-origin]').forEach((button) => {
+    button.onclick = () => {
+      const listSource = isDmThread ? (appState.directMessages[activeDmUser] || []) : (appState.messages[currentChannelId] || []);
+      const originMessage = listSource.find((message) => message.id === button.dataset.replyOrigin);
+      if (originMessage) {
+        setReplyTarget(originMessage);
+      }
+    };
+  });
 
   chatArea.scrollTop = chatArea.scrollHeight;
 }
@@ -1545,7 +1718,7 @@ async function bootstrap() {
 function showLogin() {
   showModal(`
     <h2>Topluluk Sunucusu Giris</h2>
-    <p class="modal-copy">Demo hesaplar: admin/123, moderator/123, student/123. Ayni hesap ayni anda iki farkli sekmede acilamaz.</p>
+    <p class="modal-copy">Demo hesaplar: admin/123, moderator/123, student/123. Ayni hesap web ve mobilde ayni anda acik kalabilir.</p>
     <input id="loginUser" class="modal-input" placeholder="Kullanici adi" />
     <input id="loginPass" class="modal-input" type="password" placeholder="Sifre" />
     <button id="loginSubmit" class="modal-btn primary">Giris Yap</button>
@@ -1621,7 +1794,7 @@ function showRegister() {
 function sendMessage() {
   const text = messageInput.value.trim();
   const channel = getCurrentChannel();
-  if (!text) {
+  if (!text && !pendingAttachments.length) {
     return;
   }
 
@@ -1636,10 +1809,12 @@ function sendMessage() {
       username: currentUser,
       peerUsername: activeDmUser,
       text,
-      replyTo: replyTarget
+      replyTo: replyTarget,
+      attachments: pendingAttachments
     }));
     messageInput.value = '';
     clearReplyTarget();
+    clearPendingAttachments();
     ws.send(JSON.stringify({
       type: 'typing',
       scope: 'dm',
@@ -1666,10 +1841,12 @@ function sendMessage() {
     channelId: currentChannelId,
     username: currentUser,
     text,
-    replyTo: replyTarget
+    replyTo: replyTarget,
+    attachments: pendingAttachments
   }));
   messageInput.value = '';
   clearReplyTarget();
+  clearPendingAttachments();
   if (ws?.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({
       type: 'typing',
@@ -1951,24 +2128,28 @@ function leaveVoice() {
 }
 
 async function startVideoCall() {
-  const channel = getCurrentChannel();
+  const channel = getCallChannel();
   if (!channel) {
-    return;
-  }
-
-  if (channel.kind !== 'voice') {
-    alert('Goruntulu konusma icin once bir sesli oda kanalina gec.');
+    alert('Goruntulu konusma icin once bir sesli odaya katil.');
     return;
   }
 
   try {
     await ensureLocalMedia();
-    activeCallChannelId = currentChannelId;
+    if (!localStream.getVideoTracks().length) {
+      try {
+        await ensureVideoTrack();
+        lastCallCapabilityMessage = 'Kamera ayri olarak tekrar istendi ve etkinlestirildi.';
+      } catch {
+        lastCallCapabilityMessage = 'Su an sadece ses acilabildi. Kamera iznini kontrol edip tekrar dene.';
+      }
+    }
+    activeCallChannelId = channel.id;
     ws.send(JSON.stringify({
       type: 'joinCall',
       username: currentUser,
       serverId: currentServerId,
-      channelId: currentChannelId
+      channelId: channel.id
     }));
     showToast('Goruntulu konusma baslatildi.');
     renderVideoPanel();
@@ -2019,6 +2200,12 @@ function toggleMic() {
 function toggleCamera() {
   if (!localStream) {
     showToast('Once goruntulu konusma baslat.');
+    return;
+  }
+  if (!localStream.getVideoTracks().length) {
+    ensureVideoTrack()
+      .then(() => showToast('Kamera eklendi.'))
+      .catch((error) => showToast(explainMediaError(error)));
     return;
   }
   cameraEnabled = !cameraEnabled;
@@ -2171,11 +2358,16 @@ function showCallHub() {
 function openQuickActions() {
   showModal(`
     <h2>Hizli Islemler</h2>
-    <button id="quickCreateChannel" class="modal-btn primary">Kanal Ekle</button>
+    <button id="quickAttach" class="modal-btn primary">Dosya / Gorsel Ekle</button>
+    <button id="quickCreateChannel" class="modal-btn secondary">Kanal Ekle</button>
     <button id="quickCreateCategory" class="modal-btn secondary">Kategori Ekle</button>
     <button id="quickReport" class="modal-btn secondary">Rapor Olustur</button>
   `);
 
+  document.getElementById('quickAttach').onclick = () => {
+    hideModal();
+    attachmentInput?.click();
+  };
   document.getElementById('quickCreateChannel').onclick = () => {
     hideModal();
     createChannel();
@@ -2243,6 +2435,13 @@ window.onload = () => {
   }, { once: true });
 
   sendBtn.onclick = sendMessage;
+  attachmentInput.onchange = async () => {
+    try {
+      await loadAttachmentFiles(attachmentInput.files);
+    } catch (error) {
+      showToast(error.message || 'Dosya eklenemedi.');
+    }
+  };
   messageInput.onkeydown = (event) => {
     if (event.key === 'Enter') {
       sendMessage();

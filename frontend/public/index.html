@@ -474,8 +474,11 @@
       background: var(--surface-hover);
     }
 
-    .message-row.dm-thread .reactions-row,
-    .message-row.dm-thread .message-actions-row {
+    .message-row.dm-thread .reactions-row {
+      display: none;
+    }
+
+    .message-row.dm-thread .reaction-palette {
       display: none;
     }
 
@@ -577,6 +580,46 @@
       text-overflow: ellipsis;
     }
 
+    .attachments-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 6px;
+    }
+
+    .attachment-card {
+      display: grid;
+      gap: 6px;
+      min-width: 180px;
+      max-width: 280px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: var(--surface-hover);
+      border: 1px solid var(--line-subtle);
+      color: var(--text);
+      text-decoration: none;
+    }
+
+    .attachment-card.image {
+      padding: 8px;
+    }
+
+    .attachment-card img {
+      width: 100%;
+      max-height: 220px;
+      object-fit: cover;
+      border-radius: 10px;
+      display: block;
+    }
+
+    .attachment-card span {
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
     .message-actions-row {
       display: flex;
       justify-content: space-between;
@@ -584,7 +627,7 @@
       gap: 8px;
       flex-wrap: wrap;
       margin-top: 0;
-      opacity: 0;
+      opacity: 0.72;
       transform: translateY(2px);
       transition: opacity 0.16s ease, transform 0.16s ease;
     }
@@ -1352,6 +1395,32 @@
       color: var(--muted);
     }
 
+    .attachment-preview {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .attachment-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      max-width: 100%;
+      border-radius: 999px;
+      padding: 6px 10px;
+      background: var(--surface-hover);
+      border: 1px solid var(--line-subtle);
+      color: var(--text);
+    }
+
+    .attachment-pill span {
+      max-width: 220px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 12px;
+    }
+
     .message-stack {
       display: grid;
       gap: 1px;
@@ -1724,6 +1793,8 @@
       <footer class="composer">
         <div class="helper-line">Komutlar: /help, /stats, /poll soru | secenek1 | secenek2, /report mantigi panelden, moderasyon admin/mod uzerinden calisir.</div>
         <div id="replyPreview" class="reply-preview hidden"></div>
+        <div id="attachmentPreview" class="attachment-preview hidden"></div>
+        <input id="attachmentInput" class="hidden" type="file" accept="image/*,.pdf,.doc,.docx,.txt,.zip,.rar,.mp4,.mp3" multiple />
         <div class="composer-row">
           <button id="composerAddBtn" class="composer-addon" title="Hizli Ekle">+</button>
           <input id="messageInput" placeholder="Mesaj gonder" />

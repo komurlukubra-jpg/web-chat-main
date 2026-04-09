@@ -155,6 +155,7 @@ function normalizeState(loadedState) {
     nextState.messages[channelId] = (nextState.messages[channelId] || []).map((message) => ({
       reactions: {},
       replyTo: null,
+      attachments: [],
       ...message
     }));
   });
@@ -164,6 +165,7 @@ function normalizeState(loadedState) {
       reactions: {},
       seenBy: Array.isArray(message.seenBy) ? message.seenBy : [message.user],
       replyTo: null,
+      attachments: [],
       ...message
     }));
   });
@@ -320,6 +322,40 @@ function sanitizeReply(replyTo) {
     user,
     text: text.slice(0, 180)
   };
+}
+
+function sanitizeAttachments(attachments) {
+  if (!Array.isArray(attachments)) {
+    return [];
+  }
+
+  return attachments
+    .slice(0, 3)
+    .map((attachment) => {
+      if (!attachment || typeof attachment !== 'object') {
+        return null;
+      }
+
+      const name = String(attachment.name || '').trim().slice(0, 120);
+      const type = String(attachment.type || 'application/octet-stream').trim().slice(0, 120);
+      const dataUrl = String(attachment.dataUrl || '');
+      const size = Number(attachment.size || 0);
+      if (!name || !dataUrl.startsWith('data:')) {
+        return null;
+      }
+      if (size > 2_000_000 || dataUrl.length > 3_000_000) {
+        return null;
+      }
+
+      return {
+        id: String(attachment.id || uid('att')),
+        name,
+        type,
+        size,
+        dataUrl
+      };
+    })
+    .filter(Boolean);
 }
 
 function getServer(serverId) {
@@ -538,11 +574,19 @@ function ensureMessageShape(message) {
   if (!message.replyTo || typeof message.replyTo !== 'object') {
     message.replyTo = null;
   }
+  if (!Array.isArray(message.attachments)) {
+    message.attachments = [];
+  }
   return message;
 }
 
 function getMessage(channelId, messageId) {
   const messages = state.messages[channelId] || [];
+  return messages.find((message) => message.id === messageId) || null;
+}
+
+function getDmMessage(userA, userB, messageId) {
+  const messages = getDmMessages(userA, userB);
   return messages.find((message) => message.id === messageId) || null;
 }
 
@@ -710,10 +754,6 @@ app.post('/api/login', (req, res) => {
 
   if (user.banned) {
     return res.status(403).json({ error: 'This user is banned.' });
-  }
-
-  if (onlineUsers.has(user.username) || getWsByUsername(user.username)) {
-    return res.status(409).json({ error: 'Bu hesap su anda baska bir oturumda acik.' });
   }
 
   const presence = ensurePresenceEntry(user.username);
@@ -939,10 +979,7 @@ app.post('/api/logout', (req, res) => {
     return res.status(404).json({ error: 'User not found.' });
   }
 
-  const userWs = getWsByUsername(user.username);
-  if (userWs) {
-    userWs.close(4001, 'logout');
-  } else {
+  if (!userHasOtherActiveSession(user.username)) {
     setUserOffline(user.username);
     saveState();
     broadcastState();
@@ -971,14 +1008,41 @@ app.post('/api/avatar', (req, res) => {
 
 const wsClients = new Map();
 
-function getWsByUsername(username) {
+function getWsClientsByUsername(username, excludedClient = null) {
   const normalized = normalizeUsername(username);
+  const clients = [];
   for (const [client, info] of wsClients.entries()) {
+    if (client === excludedClient) {
+      continue;
+    }
     if (normalizeUsername(info?.username) === normalized && client.readyState === WebSocket.OPEN) {
-      return client;
+      clients.push(client);
     }
   }
-  return null;
+  return clients;
+}
+
+function getWsByUsername(username) {
+  return getWsClientsByUsername(username)[0] || null;
+}
+
+function userHasOtherActiveSession(username, excludedClient = null) {
+  return getWsClientsByUsername(username, excludedClient).length > 0;
+}
+
+function sendToUserSessions(username, payload) {
+  const message = JSON.stringify(payload);
+  getWsClientsByUsername(username).forEach((client) => {
+    client.send(message);
+  });
+}
+
+function sendDmMessagesToUserSessions(username, peerUsername) {
+  sendToUserSessions(username, {
+    type: 'dmMessages',
+    peerUsername,
+    messages: getDmMessages(username, peerUsername)
+  });
 }
 
 function removeUserFromCalls(username) {
@@ -1021,13 +1085,6 @@ wss.on('connection', (ws) => {
         return;
       }
 
-      const existingClient = getWsByUsername(user.username);
-      if (existingClient && existingClient !== ws) {
-        ws.send(JSON.stringify({ type: 'error', message: 'Bu hesap baska bir oturumda acik.' }));
-        ws.close(4009, 'duplicate-session');
-        return;
-      }
-
       wsClients.set(ws, { username: user.username, currentCallChannelId: null });
       setUserOnline(user.username);
       saveState();
@@ -1057,11 +1114,8 @@ wss.on('connection', (ws) => {
       if (markDmSeen(data.username, data.peerUsername)) {
         saveState();
       }
-      sendDmMessages(ws, data.username, data.peerUsername);
-      const peerWs = getWsByUsername(data.peerUsername);
-      if (peerWs) {
-        sendDmMessages(peerWs, data.peerUsername, data.username);
-      }
+      sendDmMessagesToUserSessions(data.username, data.peerUsername);
+      sendDmMessagesToUserSessions(data.peerUsername, data.username);
       return;
     }
 
@@ -1180,6 +1234,8 @@ wss.on('connection', (ws) => {
     if (data.type === 'message') {
       const serverItem = getServer(data.serverId);
       const user = getUser(data.username);
+      const text = typeof data.text === 'string' ? data.text.trim() : '';
+      const attachments = sanitizeAttachments(data.attachments);
       if (!serverItem || !user || !canAccessChannel(serverItem, data.username, data.channelId)) {
         return;
       }
@@ -1194,12 +1250,12 @@ wss.on('connection', (ws) => {
         return;
       }
 
-      if (typeof data.text === 'string' && data.text.startsWith('/')) {
+      if (text.startsWith('/')) {
         const result = handleCommand({
           serverId: data.serverId,
           channelId: data.channelId,
           username: data.username,
-          commandText: data.text.trim()
+          commandText: text
         });
 
         if (result.error) {
@@ -1210,13 +1266,18 @@ wss.on('connection', (ws) => {
         return;
       }
 
+      if (!text && !attachments.length) {
+        return;
+      }
+
       const message = {
         id: uid('msg'),
         user: user.username,
-        text: data.text.trim(),
+        text,
         time: now(),
         reactions: {},
-        replyTo: sanitizeReply(data.replyTo)
+        replyTo: sanitizeReply(data.replyTo),
+        attachments
       };
 
       if (!state.messages[data.channelId]) {
@@ -1234,19 +1295,24 @@ wss.on('connection', (ws) => {
     }
 
     if (data.type === 'dmMessage') {
-      if (!getUser(data.username) || !getUser(data.peerUsername) || !data.text?.trim()) {
+      const sender = getUser(data.username);
+      const receiver = getUser(data.peerUsername);
+      const text = typeof data.text === 'string' ? data.text.trim() : '';
+      const attachments = sanitizeAttachments(data.attachments);
+      if (!sender || !receiver || (!text && !attachments.length)) {
         return;
       }
 
       const dmKey = getDmKey(data.username, data.peerUsername);
       const message = {
         id: uid('dm'),
-        user: getUser(data.username).username,
-        text: data.text.trim(),
+        user: sender.username,
+        text,
         time: now(),
         reactions: {},
-        seenBy: [getUser(data.username).username],
-        replyTo: sanitizeReply(data.replyTo)
+        seenBy: [sender.username],
+        replyTo: sanitizeReply(data.replyTo),
+        attachments
       };
 
       state.directMessages[dmKey] = state.directMessages[dmKey] || [];
@@ -1254,14 +1320,38 @@ wss.on('connection', (ws) => {
       setTyping(`dm:${dmKey}`, data.username, false);
       saveState();
 
-      const senderWs = getWsByUsername(data.username);
-      const targetWs = getWsByUsername(data.peerUsername);
-      if (senderWs) {
-        sendDmMessages(senderWs, data.username, data.peerUsername);
+      sendDmMessagesToUserSessions(data.username, data.peerUsername);
+      sendDmMessagesToUserSessions(data.peerUsername, data.username);
+      return;
+    }
+
+    if (data.type === 'editDmMessage') {
+      const message = getDmMessage(data.username, data.peerUsername, data.messageId);
+      if (!message || message.user !== getUser(data.username)?.username || !data.text?.trim()) {
+        return;
       }
-      if (targetWs) {
-        sendDmMessages(targetWs, data.peerUsername, data.username);
+
+      message.text = data.text.trim();
+      message.editedAt = now();
+      ensureMessageShape(message);
+      saveState();
+      sendDmMessagesToUserSessions(data.username, data.peerUsername);
+      sendDmMessagesToUserSessions(data.peerUsername, data.username);
+      return;
+    }
+
+    if (data.type === 'deleteDmMessage') {
+      const dmKey = getDmKey(data.username, data.peerUsername);
+      const list = state.directMessages[dmKey] || [];
+      const index = list.findIndex((message) => message.id === data.messageId && message.user === getUser(data.username)?.username);
+      if (index < 0) {
+        return;
       }
+
+      list.splice(index, 1);
+      saveState();
+      sendDmMessagesToUserSessions(data.username, data.peerUsername);
+      sendDmMessagesToUserSessions(data.peerUsername, data.username);
       return;
     }
 
@@ -1360,19 +1450,21 @@ wss.on('connection', (ws) => {
 
   ws.on('close', () => {
     const info = wsClients.get(ws);
+    wsClients.delete(ws);
     if (info?.username) {
       Object.keys(typingState).forEach((scopeKey) => {
         setTyping(scopeKey, info.username, false);
       });
-      setUserOffline(info.username);
-      saveState();
-      broadcast('callLeft', {
-        username: info.username,
-        channelId: info.currentCallChannelId
-      });
+      if (!userHasOtherActiveSession(info.username)) {
+        setUserOffline(info.username);
+        saveState();
+        broadcast('callLeft', {
+          username: info.username,
+          channelId: info.currentCallChannelId
+        });
+      }
       broadcastState();
     }
-    wsClients.delete(ws);
   });
 });
 
