@@ -371,10 +371,12 @@ function playNotificationSound() {
 
 function showModal(html) {
   modal.innerHTML = html;
+  document.body.classList.add('modal-open');
   modalOverlay.classList.remove('hidden');
 }
 
 function hideModal() {
+  document.body.classList.remove('modal-open');
   modalOverlay.classList.add('hidden');
 }
 

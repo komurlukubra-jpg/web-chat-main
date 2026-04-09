@@ -90,6 +90,10 @@
       overflow: hidden;
     }
 
+    body.modal-open {
+      overflow: hidden;
+    }
+
     .hidden {
       display: none !important;
     }
@@ -943,6 +947,16 @@
       align-items: center;
       justify-content: center;
       padding: 20px;
+      z-index: 120;
+    }
+
+    body.modal-open .app-shell {
+      pointer-events: none;
+      user-select: none;
+    }
+
+    body.modal-open .mobile-nav {
+      display: none !important;
     }
 
     .modal {
@@ -2997,7 +3011,7 @@
         align-items: flex-end;
         justify-content: stretch;
         padding: 12px;
-        background: rgba(0, 0, 0, 0.58);
+        background: rgba(8, 10, 16, 0.76);
       }
 
       .modal {
