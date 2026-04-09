@@ -86,6 +86,10 @@
       overflow: hidden;
     }
 
+    body.call-open {
+      overflow: hidden;
+    }
+
     .hidden {
       display: none !important;
     }
@@ -1555,6 +1559,471 @@
       cursor: not-allowed;
     }
 
+    .call-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 80;
+      background: rgba(7, 9, 14, 0.86);
+      padding: 24px;
+      display: flex;
+      align-items: stretch;
+      justify-content: center;
+    }
+
+    .call-shell {
+      width: min(1440px, 100%);
+      height: 100%;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      border-radius: 26px;
+      overflow: hidden;
+      background: #11131b;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      box-shadow: 0 34px 90px rgba(0, 0, 0, 0.4);
+    }
+
+    body.light-mode .call-shell {
+      background: #f4f6fb;
+      border-color: rgba(15, 18, 26, 0.08);
+    }
+
+    .call-main {
+      min-width: 0;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto auto;
+      gap: 14px;
+      padding: 18px;
+    }
+
+    .call-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .call-kicker {
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .call-title {
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--text);
+    }
+
+    .call-meta {
+      font-size: 14px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    .call-top-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .call-top-btn {
+      border: 0;
+      border-radius: 999px;
+      padding: 10px 14px;
+      cursor: pointer;
+      font-weight: 700;
+      color: var(--text);
+      background: var(--surface-card);
+      border: 1px solid var(--line-soft);
+    }
+
+    .call-stage {
+      min-height: 0;
+      border-radius: 24px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      background: linear-gradient(155deg, rgba(17, 19, 27, 0.98), rgba(27, 30, 43, 0.98));
+      padding: 14px;
+    }
+
+    body.light-mode .call-stage {
+      border-color: rgba(15, 18, 26, 0.08);
+      background: linear-gradient(155deg, rgba(244, 246, 251, 0.98), rgba(228, 232, 240, 0.98));
+    }
+
+    .call-stage-card {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      min-height: 320px;
+      border-radius: 20px;
+      overflow: hidden;
+      background: #05070d;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .call-stage-card video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      background: #05070d;
+    }
+
+    .call-stage-card.placeholder {
+      background: radial-gradient(circle at top, rgba(88, 101, 242, 0.28), rgba(15, 18, 26, 0.98));
+    }
+
+    .call-stage-fallback,
+    .call-film-fallback,
+    .call-empty-big {
+      display: grid;
+      justify-items: center;
+      align-content: center;
+      gap: 14px;
+      text-align: center;
+      color: white;
+      height: 100%;
+      width: 100%;
+    }
+
+    body.light-mode .call-stage-fallback,
+    body.light-mode .call-film-fallback,
+    body.light-mode .call-empty-big {
+      color: #11131b;
+    }
+
+    .call-empty-big strong {
+      font-size: 28px;
+    }
+
+    .call-empty-big p {
+      max-width: 420px;
+      margin: 0;
+      color: rgba(255, 255, 255, 0.74);
+    }
+
+    body.light-mode .call-empty-big p {
+      color: rgba(17, 19, 27, 0.72);
+    }
+
+    .call-avatar {
+      width: 92px;
+      height: 92px;
+      border-radius: 999px;
+      overflow: hidden;
+      background: linear-gradient(135deg, var(--accent), #8ea1ff);
+      display: grid;
+      place-items: center;
+      color: white;
+      font-size: 34px;
+      font-weight: 800;
+      box-shadow: 0 18px 42px rgba(0, 0, 0, 0.28);
+    }
+
+    .call-avatar.small {
+      width: 58px;
+      height: 58px;
+      font-size: 22px;
+      box-shadow: none;
+    }
+
+    .call-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .call-stage-meta {
+      position: absolute;
+      left: 16px;
+      right: 16px;
+      bottom: 16px;
+      padding: 12px 14px;
+      border-radius: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      background: rgba(7, 9, 14, 0.54);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      backdrop-filter: blur(12px);
+      color: white;
+    }
+
+    body.light-mode .call-stage-meta {
+      background: rgba(244, 246, 251, 0.78);
+      border-color: rgba(15, 18, 26, 0.08);
+      color: #11131b;
+    }
+
+    .call-stage-name {
+      font-weight: 800;
+      font-size: 15px;
+    }
+
+    .call-stage-state {
+      font-size: 12px;
+      opacity: 0.82;
+      margin-top: 2px;
+    }
+
+    .call-badge-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .call-badge {
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      background: rgba(255, 255, 255, 0.12);
+      color: white;
+    }
+
+    .call-badge.on {
+      background: rgba(59, 165, 92, 0.22);
+      color: #c8f4d4;
+    }
+
+    .call-badge.off {
+      background: rgba(237, 66, 69, 0.24);
+      color: #ffd3d3;
+    }
+
+    body.light-mode .call-badge {
+      color: #11131b;
+      background: rgba(17, 19, 27, 0.08);
+    }
+
+    body.light-mode .call-badge.on {
+      background: rgba(59, 165, 92, 0.16);
+      color: #11632d;
+    }
+
+    body.light-mode .call-badge.off {
+      background: rgba(237, 66, 69, 0.16);
+      color: #8e2325;
+    }
+
+    .call-filmstrip {
+      display: flex;
+      gap: 12px;
+      overflow: auto;
+      padding-bottom: 4px;
+    }
+
+    .call-film-button {
+      border: 0;
+      background: transparent;
+      padding: 0;
+      min-width: 190px;
+      max-width: 190px;
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .call-film-card {
+      border-radius: 18px;
+      overflow: hidden;
+      border: 1px solid var(--line-soft);
+      background: var(--surface-card);
+      transition: transform 0.18s ease, border-color 0.18s ease;
+    }
+
+    .call-film-card.active {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+      box-shadow: 0 14px 30px rgba(88, 101, 242, 0.18);
+    }
+
+    .call-film-media {
+      height: 114px;
+      background: #05070d;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .call-film-media video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .call-film-caption {
+      padding: 10px 12px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+      color: var(--text);
+      font-size: 13px;
+    }
+
+    .call-film-caption strong {
+      display: block;
+      margin-bottom: 3px;
+    }
+
+    .call-film-caption span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .call-dock {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .call-dock-btn {
+      border: 0;
+      border-radius: 999px;
+      padding: 12px 18px;
+      font-weight: 800;
+      font-size: 13px;
+      cursor: pointer;
+      color: var(--text);
+      background: var(--surface-card);
+      border: 1px solid var(--line-soft);
+      min-width: 146px;
+    }
+
+    .call-dock-btn.success {
+      background: #3ba55c;
+      border-color: #3ba55c;
+      color: white;
+    }
+
+    .call-dock-btn.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: white;
+    }
+
+    .call-dock-btn.danger {
+      background: #ed4245;
+      border-color: #ed4245;
+      color: white;
+    }
+
+    .call-dock-btn.active {
+      background: rgba(59, 165, 92, 0.18);
+      border-color: rgba(59, 165, 92, 0.28);
+      color: var(--text);
+    }
+
+    .call-dock-btn.muted {
+      background: rgba(237, 66, 69, 0.18);
+      border-color: rgba(237, 66, 69, 0.28);
+      color: var(--text);
+    }
+
+    .call-dock-btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .call-side {
+      min-width: 0;
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      gap: 14px;
+      padding: 18px;
+      border-left: 1px solid var(--line-soft);
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    body.light-mode .call-side {
+      background: rgba(15, 18, 26, 0.03);
+    }
+
+    .call-side-card {
+      display: grid;
+      gap: 10px;
+      border-radius: 18px;
+      border: 1px solid var(--line-soft);
+      background: var(--surface-card);
+      padding: 14px;
+    }
+
+    .call-side-card h3 {
+      margin: 0;
+      font-size: 14px;
+      color: var(--text);
+    }
+
+    .call-side-status {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .call-member-list {
+      min-height: 0;
+      overflow: auto;
+      display: grid;
+      gap: 10px;
+    }
+
+    .call-member-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      border-radius: 16px;
+      padding: 10px 12px;
+      border: 1px solid var(--line-soft);
+      background: var(--surface-raised);
+    }
+
+    .call-member-left {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .call-member-meta {
+      min-width: 0;
+    }
+
+    .call-member-name {
+      font-weight: 800;
+      color: var(--text);
+    }
+
+    .call-member-subtitle {
+      font-size: 12px;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .call-member-right {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
     .sidebar.hidden-panel {
       display: none;
     }
@@ -1647,6 +2116,51 @@
       .server-info-card,
       .sidebar-panel {
         padding: 10px;
+      }
+    }
+
+    @media (max-width: 1100px) {
+      .call-shell {
+        grid-template-columns: 1fr;
+      }
+
+      .call-side {
+        border-left: 0;
+        border-top: 1px solid var(--line-soft);
+        grid-template-rows: auto auto minmax(220px, 1fr);
+      }
+    }
+
+    @media (max-width: 860px) {
+      .call-overlay {
+        padding: 10px;
+      }
+
+      .call-shell {
+        border-radius: 20px;
+      }
+
+      .call-main,
+      .call-side {
+        padding: 14px;
+      }
+
+      .call-title {
+        font-size: 22px;
+      }
+
+      .call-stage-card {
+        min-height: 250px;
+      }
+
+      .call-film-button {
+        min-width: 150px;
+        max-width: 150px;
+      }
+
+      .call-dock-btn {
+        flex: 1 1 calc(50% - 12px);
+        min-width: 0;
       }
     }
 
@@ -1884,6 +2398,52 @@
   <div id="modalOverlay" class="modal-overlay hidden">
     <div id="modal" class="modal"></div>
   </div>
+
+  <section id="callOverlay" class="call-overlay hidden" aria-hidden="true">
+    <div class="call-shell">
+      <div class="call-main">
+        <div class="call-topbar">
+          <div>
+            <div class="call-kicker">Discord Tarzi Cagri</div>
+            <div id="callOverlayTitle" class="call-title">Sesli Oda Sec</div>
+            <div id="callOverlayMeta" class="call-meta">Kamera, mikrofon ve katilimcilar burada yonetilir.</div>
+          </div>
+          <div class="call-top-actions">
+            <button id="callOverlayMinimizeBtn" class="call-top-btn">Arka Plana Al</button>
+            <button id="callOverlayCloseBtn" class="call-top-btn">Kapat</button>
+          </div>
+        </div>
+
+        <div id="callStage" class="call-stage"></div>
+        <div id="callFilmstrip" class="call-filmstrip"></div>
+
+        <div class="call-dock">
+          <button id="callOverlayJoinBtn" class="call-dock-btn success">Voice Katil</button>
+          <button id="callOverlayStartBtn" class="call-dock-btn primary">Goruntulu Baslat</button>
+          <button id="callOverlayMicBtn" class="call-dock-btn">Mikrofon</button>
+          <button id="callOverlayCameraBtn" class="call-dock-btn">Kamera</button>
+          <button id="callOverlayEndBtn" class="call-dock-btn danger">Cagriyi Bitir</button>
+        </div>
+      </div>
+
+      <aside class="call-side">
+        <section class="call-side-card">
+          <h3>Cagri Durumu</h3>
+          <div id="callOverlayStatus" class="call-side-status">Henuz aktif goruntulu konusma yok.</div>
+        </section>
+
+        <section class="call-side-card">
+          <h3>Baglanti Notlari</h3>
+          <div id="callOverlaySummary" class="call-side-status">Bir sesli odaya katilip kamerayi buradan baslatabilirsin.</div>
+        </section>
+
+        <section class="call-side-card" style="min-height:0;">
+          <h3>Katilimcilar</h3>
+          <div id="callOverlayMembers" class="call-member-list"></div>
+        </section>
+      </aside>
+    </div>
+  </section>
 
   <script src="app.js"></script>
 </body>

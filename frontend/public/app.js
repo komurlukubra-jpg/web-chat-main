@@ -44,6 +44,10 @@ let pendingAttachments = [];
 const peerConnections = new Map();
 const remoteStreams = new Map();
 let lastCallCapabilityMessage = '';
+let callOverlayOpen = false;
+let focusedCallTileKey = 'self';
+const makingOffer = new Map();
+const ignoredOffer = new Map();
 
 const serverList = document.getElementById('serverList');
 const channelTree = document.getElementById('channelTree');
@@ -66,6 +70,21 @@ const pollList = document.getElementById('pollList');
 const videoPanel = document.getElementById('videoPanel');
 const modalOverlay = document.getElementById('modalOverlay');
 const modal = document.getElementById('modal');
+const callOverlay = document.getElementById('callOverlay');
+const callStage = document.getElementById('callStage');
+const callFilmstrip = document.getElementById('callFilmstrip');
+const callOverlayTitle = document.getElementById('callOverlayTitle');
+const callOverlayMeta = document.getElementById('callOverlayMeta');
+const callOverlayStatus = document.getElementById('callOverlayStatus');
+const callOverlaySummary = document.getElementById('callOverlaySummary');
+const callOverlayMembers = document.getElementById('callOverlayMembers');
+const callOverlayJoinBtn = document.getElementById('callOverlayJoinBtn');
+const callOverlayStartBtn = document.getElementById('callOverlayStartBtn');
+const callOverlayMicBtn = document.getElementById('callOverlayMicBtn');
+const callOverlayCameraBtn = document.getElementById('callOverlayCameraBtn');
+const callOverlayEndBtn = document.getElementById('callOverlayEndBtn');
+const callOverlayCloseBtn = document.getElementById('callOverlayCloseBtn');
+const callOverlayMinimizeBtn = document.getElementById('callOverlayMinimizeBtn');
 const createServerBtn = document.getElementById('createServerBtn');
 const createCategoryBtn = document.getElementById('createCategoryBtn');
 const createChannelBtn = document.getElementById('createChannelBtn');
@@ -621,13 +640,19 @@ function wsProtocol() {
   return location.protocol === 'https:' ? 'wss' : 'ws';
 }
 
+function getActiveSignalChannelId() {
+  return activeCallChannelId || getCallChannel()?.id || currentVoiceChannelId || currentChannelId;
+}
+
 function closePeerConnection(username) {
   const pc = peerConnections.get(username);
   if (pc) {
     pc.close();
-    peerConnections.delete(username);
   }
+  peerConnections.delete(username);
   remoteStreams.delete(username);
+  makingOffer.delete(username);
+  ignoredOffer.delete(username);
 }
 
 function cleanupCallUi() {
@@ -636,25 +661,339 @@ function cleanupCallUi() {
   micEnabled = true;
   cameraEnabled = true;
   lastCallCapabilityMessage = '';
+  focusedCallTileKey = 'self';
   renderVideoPanel();
+}
+
+function isPolitePeer(peerUsername) {
+  return normalizeUsernameKey(currentUser) > normalizeUsernameKey(peerUsername);
+}
+
+function bindStreamState(stream, onChange) {
+  if (!stream?.getTracks) {
+    return;
+  }
+  stream.getTracks().forEach((track) => {
+    track.onended = onChange;
+    track.onmute = onChange;
+    track.onunmute = onChange;
+  });
+}
+
+function getActiveTrack(stream, kind) {
+  const tracks = kind === 'video'
+    ? (stream?.getVideoTracks?.() || [])
+    : (stream?.getAudioTracks?.() || []);
+  return tracks.find((track) => track.readyState !== 'ended') || null;
+}
+
+function streamHasVideo(stream, isSelf = false) {
+  const track = getActiveTrack(stream, 'video');
+  if (!track) {
+    return false;
+  }
+  return isSelf ? (track.enabled && cameraEnabled) : !track.muted;
+}
+
+function streamHasAudio(stream, isSelf = false) {
+  const track = getActiveTrack(stream, 'audio');
+  if (!track) {
+    return false;
+  }
+  return isSelf ? (track.enabled && micEnabled) : !track.muted;
+}
+
+function callAvatarMarkup(username, className = 'call-avatar') {
+  const user = getUserRecord(username);
+  if (user?.avatar) {
+    return `<div class="${className}"><img src="${user.avatar}" alt="${escapeHtml(username)}" /></div>`;
+  }
+  return `<div class="${className}">${escapeHtml(userInitials(username))}</div>`;
+}
+
+function getCallTiles() {
+  const callMembers = [...new Set(getCurrentCallMembers())];
+  const tiles = [];
+  const includeSelf = Boolean(localStream || activeCallChannelId || callMembers.includes(currentUser));
+
+  if (includeSelf) {
+    tiles.push({
+      key: 'self',
+      username: currentUser,
+      isSelf: true,
+      stream: localStream,
+      hasVideo: streamHasVideo(localStream, true),
+      hasAudio: streamHasAudio(localStream, true)
+    });
+  }
+
+  callMembers
+    .filter((username) => normalizeUsernameKey(username) !== normalizeUsernameKey(currentUser))
+    .forEach((username) => {
+      const stream = remoteStreams.get(username) || null;
+      tiles.push({
+        key: username,
+        username,
+        isSelf: false,
+        stream,
+        hasVideo: streamHasVideo(stream),
+        hasAudio: streamHasAudio(stream)
+      });
+    });
+
+  for (const [username, stream] of remoteStreams.entries()) {
+    if (!tiles.some((tile) => tile.key === username)) {
+      tiles.push({
+        key: username,
+        username,
+        isSelf: false,
+        stream,
+        hasVideo: streamHasVideo(stream),
+        hasAudio: streamHasAudio(stream)
+      });
+    }
+  }
+
+  return tiles;
+}
+
+function getPreferredStageTile(tiles) {
+  if (!tiles.length) {
+    focusedCallTileKey = 'self';
+    return null;
+  }
+
+  const focused = tiles.find((tile) => tile.key === focusedCallTileKey);
+  if (focused) {
+    return focused;
+  }
+
+  const fallback = tiles.find((tile) => !tile.isSelf && tile.hasVideo)
+    || tiles.find((tile) => !tile.isSelf)
+    || tiles.find((tile) => tile.isSelf)
+    || tiles[0];
+  focusedCallTileKey = fallback.key;
+  return fallback;
+}
+
+function callStatusText(tile) {
+  if (!tile?.stream) {
+    return tile?.isSelf ? 'Kamera ve mikrofon baglaniyor.' : 'Karsi tarafin kamerasi henuz gelmedi.';
+  }
+  if (tile.hasVideo && tile.hasAudio) {
+    return 'Ses ve kamera acik.';
+  }
+  if (tile.hasVideo) {
+    return 'Kamera acik, mikrofon kapali.';
+  }
+  if (tile.hasAudio) {
+    return 'Sadece ses acik.';
+  }
+  return 'Mikrofon ve kamera kapali.';
+}
+
+function attachRenderedVideo(id, stream, muted = false) {
+  const element = document.getElementById(id);
+  if (!element || !stream) {
+    return;
+  }
+  element.srcObject = stream;
+  playVideoElement(element, muted);
+}
+
+function renderCallOverlay() {
+  if (!callOverlay) {
+    return;
+  }
+
+  const callChannel = getCallChannel() || getFirstVoiceChannel();
+  const participants = getCurrentCallMembers();
+  const tiles = getCallTiles();
+  const stageTile = getPreferredStageTile(tiles);
+  const hasCall = Boolean(localStream || participants.length || remoteStreams.size || activeCallChannelId);
+  const hasAudioTrack = Boolean(getActiveTrack(localStream, 'audio'));
+  const hasVideoTrack = Boolean(getActiveTrack(localStream, 'video'));
+
+  callOverlayTitle.textContent = callChannel
+    ? `# ${callChannel.name}`
+    : 'Sesli Oda Sec';
+  callOverlayMeta.textContent = callChannel
+    ? `${participants.length || 1} katilimci, Discord benzeri sahne gorunumu`
+    : 'Once bir sesli odaya katil, sonra kamerayi baslat.';
+
+  callOverlayStatus.textContent = hasCall
+    ? (lastCallCapabilityMessage || 'Goruntulu konusma aktif. Buyuk sahnede katilimcilari takip edebilirsin.')
+    : (isSecureMediaContext()
+        ? 'Henuz aktif goruntulu konusma yok. Voice kanala girip buradan cagriyi baslat.'
+        : 'Bu ozellik icin HTTPS veya localhost gerekli.');
+
+  callOverlaySummary.textContent = hasVideoTrack
+    ? (cameraEnabled ? 'Kamera yayinliyor. Goruntu gelmiyorsa karsi tarafin da kamerayi acmasi ve izin vermesi gerekir.' : 'Kamera mevcut ama su an kapali.')
+    : 'Yerel kamera henuz baglanmadi. Kamera izni verip tekrar dene.';
+
+  callOverlayJoinBtn.disabled = !callChannel || currentVoiceChannelId === callChannel.id;
+  callOverlayJoinBtn.textContent = callChannel && currentVoiceChannelId === callChannel.id ? 'Voice Odadasin' : 'Voice Katil';
+  callOverlayStartBtn.disabled = !callChannel;
+  callOverlayMicBtn.disabled = !hasAudioTrack;
+  callOverlayCameraBtn.disabled = false;
+  callOverlayEndBtn.disabled = !hasCall;
+
+  callOverlayMicBtn.textContent = hasAudioTrack ? (micEnabled ? 'Mikrofon Acik' : 'Mikrofon Kapali') : 'Mikrofon Yok';
+  callOverlayCameraBtn.textContent = hasVideoTrack ? (cameraEnabled ? 'Kamera Acik' : 'Kamera Kapali') : 'Kamerayi Ac';
+  callOverlayMicBtn.className = `call-dock-btn ${hasAudioTrack ? (micEnabled ? 'active' : 'muted') : ''}`.trim();
+  callOverlayCameraBtn.className = `call-dock-btn ${hasVideoTrack ? (cameraEnabled ? 'active' : 'muted') : 'primary'}`.trim();
+
+  if (!stageTile) {
+    callStage.innerHTML = `
+      <div class="call-stage-card placeholder">
+        <div class="call-empty-big">
+          <strong>Discord tarzi cagri hazir</strong>
+          <p>${escapeHtml(lastCallCapabilityMessage || 'Sesli odaya katilip Goruntulu Baslat dugmesine bastiginda kamera burada buyuk sahnede acilir.')}</p>
+        </div>
+      </div>
+    `;
+    callFilmstrip.innerHTML = '';
+    callOverlayMembers.innerHTML = '<div class="empty-state">Henuz katilimci yok.</div>';
+    callOverlay.classList.toggle('hidden', !callOverlayOpen);
+    callOverlay.setAttribute('aria-hidden', String(!callOverlayOpen));
+    document.body.classList.toggle('call-open', callOverlayOpen);
+    return;
+  }
+
+  const stageVideoId = stageTile.hasVideo ? `callStageVideo_${stageTile.key}` : '';
+  callStage.innerHTML = `
+    <div class="call-stage-card ${stageTile.hasVideo ? '' : 'placeholder'}">
+      ${stageTile.hasVideo
+        ? `<video id="${stageVideoId}" autoplay ${stageTile.isSelf ? 'muted' : ''} playsinline></video>`
+        : `<div class="call-stage-fallback">
+            ${callAvatarMarkup(stageTile.username)}
+            <strong>${escapeHtml(stageTile.isSelf ? 'Kameran kapali' : `${stageTile.username} kamera acmadi`)}</strong>
+            <div>${escapeHtml(callStatusText(stageTile))}</div>
+          </div>`}
+      <div class="call-stage-meta">
+        <div>
+          <div class="call-stage-name">${escapeHtml(stageTile.isSelf ? 'Sen' : stageTile.username)}</div>
+          <div class="call-stage-state">${escapeHtml(callStatusText(stageTile))}</div>
+        </div>
+        <div class="call-badge-row">
+          <span class="call-badge ${stageTile.hasAudio ? 'on' : 'off'}">${stageTile.hasAudio ? 'Ses acik' : 'Ses kapali'}</span>
+          <span class="call-badge ${stageTile.hasVideo ? 'on' : 'off'}">${stageTile.hasVideo ? 'Kamera acik' : 'Kamera kapali'}</span>
+        </div>
+      </div>
+    </div>
+  `;
+
+  callFilmstrip.innerHTML = tiles.map((tile) => {
+    const stripVideoId = tile.hasVideo ? `callStripVideo_${tile.key}` : '';
+    return `
+      <button class="call-film-button" data-call-focus="${escapeHtml(tile.key)}">
+        <div class="call-film-card ${tile.key === stageTile.key ? 'active' : ''}">
+          <div class="call-film-media">
+            ${tile.hasVideo
+              ? `<video id="${stripVideoId}" autoplay ${tile.isSelf ? 'muted' : ''} playsinline></video>`
+              : `<div class="call-film-fallback">
+                  ${callAvatarMarkup(tile.username, 'call-avatar small')}
+                </div>`}
+          </div>
+          <div class="call-film-caption">
+            <div>
+              <strong>${escapeHtml(tile.isSelf ? 'Sen' : tile.username)}</strong>
+              <span>${escapeHtml(callStatusText(tile))}</span>
+            </div>
+            <span class="call-badge ${tile.hasVideo ? 'on' : 'off'}">${tile.hasVideo ? 'Cam' : 'Off'}</span>
+          </div>
+        </div>
+      </button>
+    `;
+  }).join('');
+
+  callOverlayMembers.innerHTML = tiles.map((tile) => `
+    <div class="call-member-row">
+      <div class="call-member-left">
+        ${callAvatarMarkup(tile.username, 'call-avatar small')}
+        <div class="call-member-meta">
+          <div class="call-member-name">${escapeHtml(tile.isSelf ? 'Sen' : tile.username)}</div>
+          <div class="call-member-subtitle">${escapeHtml(callStatusText(tile))}</div>
+        </div>
+      </div>
+      <div class="call-member-right">
+        <span class="call-badge ${tile.hasAudio ? 'on' : 'off'}">${tile.hasAudio ? 'Ses' : 'Mute'}</span>
+        <span class="call-badge ${tile.hasVideo ? 'on' : 'off'}">${tile.hasVideo ? 'Cam' : 'Kapali'}</span>
+      </div>
+    </div>
+  `).join('');
+
+  callFilmstrip.querySelectorAll('[data-call-focus]').forEach((button) => {
+    button.onclick = () => {
+      focusedCallTileKey = button.dataset.callFocus;
+      renderCallOverlay();
+    };
+  });
+
+  if (stageVideoId && stageTile.stream) {
+    attachRenderedVideo(stageVideoId, stageTile.stream, stageTile.isSelf);
+  }
+
+  tiles.forEach((tile) => {
+    if (tile.hasVideo && tile.stream) {
+      attachRenderedVideo(`callStripVideo_${tile.key}`, tile.stream, tile.isSelf);
+    }
+  });
+
+  callOverlay.classList.toggle('hidden', !callOverlayOpen);
+  callOverlay.setAttribute('aria-hidden', String(!callOverlayOpen));
+  document.body.classList.toggle('call-open', callOverlayOpen);
+}
+
+function openCallOverlay() {
+  callOverlayOpen = true;
+  renderCallOverlay();
+}
+
+function closeCallOverlay(options = {}) {
+  callOverlayOpen = false;
+  callOverlay.classList.add('hidden');
+  callOverlay.setAttribute('aria-hidden', 'true');
+  document.body.classList.remove('call-open');
+  if (options.minimized) {
+    showToast('Cagri arka planda acik kaldi. Video dugmesi ile tekrar buyutebilirsin.');
+  }
+}
+
+function sendRtcSignal(target, signal) {
+  if (ws?.readyState !== WebSocket.OPEN) {
+    return;
+  }
+  ws.send(JSON.stringify({
+    type: 'webrtcSignal',
+    username: currentUser,
+    target,
+    channelId: getActiveSignalChannelId(),
+    signal
+  }));
 }
 
 function renderVideoPanel() {
   const participants = getCurrentCallMembers();
-  const callChannel = getCallChannel();
-  const hasCall = Boolean(localStream || participants.length || remoteStreams.size);
-  const hasAudioTrack = Boolean(localStream?.getAudioTracks().length);
-  const hasVideoTrack = Boolean(localStream?.getVideoTracks().length);
+  const callChannel = getCallChannel() || getFirstVoiceChannel();
+  const hasCall = Boolean(localStream || participants.length || remoteStreams.size || activeCallChannelId);
+  const hasAudioTrack = Boolean(getActiveTrack(localStream, 'audio'));
+  const hasVideoTrack = Boolean(getActiveTrack(localStream, 'video'));
   toggleMicBtn.textContent = hasAudioTrack ? (micEnabled ? 'Mikrofon Acik' : 'Mikrofon Kapali') : 'Mikrofon Yok';
-  toggleCameraBtn.textContent = hasVideoTrack ? (cameraEnabled ? 'Kamera Acik' : 'Kamera Kapali') : 'Kamera Yok';
+  toggleCameraBtn.textContent = hasVideoTrack ? (cameraEnabled ? 'Kamera Acik' : 'Kamera Kapali') : 'Kamerayi Ac';
   toggleMicBtn.disabled = !hasAudioTrack;
-  toggleCameraBtn.disabled = !hasVideoTrack;
+  toggleCameraBtn.disabled = false;
 
   if (!hasCall) {
     const secureHint = isSecureMediaContext()
-      ? 'Henuz aktif gorusme yok. Ayni kanaldaki iki kullanici Baslat ile gorusmeye girebilir.'
+      ? 'Henuz aktif gorusme yok. Discord benzeri ekran icin ustteki video dugmesini veya buradaki paneli kullan.'
       : 'Bu adres guvenli degil. Goruntulu konusma icin localhost veya HTTPS kullan.';
-    videoPanel.innerHTML = `<div class="empty-state">${escapeHtml(lastCallCapabilityMessage || secureHint)}</div>`;
+    videoPanel.innerHTML = `
+      <div class="empty-state">${escapeHtml(lastCallCapabilityMessage || secureHint)}</div>
+      <button id="openCallOverlayInline" class="mini-action-btn">Discord Gorunumu Ac</button>
+    `;
+    document.getElementById('openCallOverlayInline').onclick = openCallOverlay;
+    renderCallOverlay();
     return;
   }
 
@@ -662,16 +1001,20 @@ function renderVideoPanel() {
   if (localStream) {
     cards.push(`
       <div class="video-card">
-        <video id="localVideo" autoplay muted playsinline></video>
+        ${streamHasVideo(localStream, true)
+          ? '<video id="localVideo" autoplay muted playsinline></video>'
+          : `<div class="call-film-fallback" style="height:150px;">${callAvatarMarkup(currentUser, 'call-avatar small')}</div>`}
         <div class="video-label">Sen</div>
       </div>
     `);
   }
 
-  for (const [username] of remoteStreams.entries()) {
+  for (const [username, stream] of remoteStreams.entries()) {
     cards.push(`
       <div class="video-card">
-        <video id="remoteVideo_${username}" autoplay playsinline></video>
+        ${streamHasVideo(stream)
+          ? `<video id="remoteVideo_${username}" autoplay playsinline></video>`
+          : `<div class="call-film-fallback" style="height:150px;">${callAvatarMarkup(username, 'call-avatar small')}</div>`}
         <div class="video-label">${escapeHtml(username)}</div>
       </div>
     `);
@@ -684,26 +1027,24 @@ function renderVideoPanel() {
   videoPanel.innerHTML = `
     <div class="panel-subtitle">Kanal: ${escapeHtml(callChannel?.name || '-')}</div>
     <div class="panel-subtitle">Katilimcilar: ${participants.join(', ') || currentUser}</div>
-    <div class="panel-subtitle">Durum: ${localStream ? 'Goruntulu konusma acik' : 'Baglanti bekleniyor'}</div>
-    ${lastCallCapabilityMessage ? `<div class="panel-subtitle">${escapeHtml(lastCallCapabilityMessage)}</div>` : ''}
+    <div class="panel-subtitle">Durum: ${escapeHtml(lastCallCapabilityMessage || (hasVideoTrack ? 'Kamera akisi aktif.' : 'Su an ses veya baglanti agirlikli calisiyor.'))}</div>
+    <button id="openCallOverlayInline" class="mini-action-btn">Discord Gorunumu Ac</button>
     <div class="video-grid">${cards.join('')}</div>
   `;
 
-  if (localStream) {
-    const localVideo = document.getElementById('localVideo');
-    if (localVideo) {
-      localVideo.srcObject = localStream;
-      playVideoElement(localVideo, true);
-    }
+  document.getElementById('openCallOverlayInline').onclick = openCallOverlay;
+
+  if (localStream && streamHasVideo(localStream, true)) {
+    attachRenderedVideo('localVideo', localStream, true);
   }
 
   for (const [username, stream] of remoteStreams.entries()) {
-    const el = document.getElementById(`remoteVideo_${username}`);
-    if (el) {
-      el.srcObject = stream;
-      playVideoElement(el, false);
+    if (streamHasVideo(stream)) {
+      attachRenderedVideo(`remoteVideo_${username}`, stream, false);
     }
   }
+
+  renderCallOverlay();
 }
 
 function createPeerConnection(peerUsername) {
@@ -715,24 +1056,52 @@ function createPeerConnection(peerUsername) {
     iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
   });
 
+  makingOffer.set(peerUsername, false);
+  ignoredOffer.set(peerUsername, false);
+
   if (localStream) {
     localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
   }
 
+  pc.onnegotiationneeded = async () => {
+    if (!localStream || pc.signalingState !== 'stable') {
+      return;
+    }
+    try {
+      makingOffer.set(peerUsername, true);
+      const offer = await pc.createOffer();
+      if (pc.signalingState !== 'stable') {
+        return;
+      }
+      await pc.setLocalDescription(offer);
+      sendRtcSignal(peerUsername, { type: 'offer', sdp: pc.localDescription });
+    } catch {
+      // Ignore transient renegotiation races in this MVP.
+    } finally {
+      makingOffer.set(peerUsername, false);
+    }
+  };
+
   pc.onicecandidate = (event) => {
     if (event.candidate) {
-      ws.send(JSON.stringify({
-        type: 'webrtcSignal',
-        username: currentUser,
-        target: peerUsername,
-        channelId: currentChannelId,
-        signal: { type: 'candidate', candidate: event.candidate }
-      }));
+      sendRtcSignal(peerUsername, { type: 'candidate', candidate: event.candidate });
     }
   };
 
   pc.ontrack = (event) => {
-    remoteStreams.set(peerUsername, event.streams[0]);
+    const stream = event.streams[0] || new MediaStream([event.track]);
+    const existingStream = remoteStreams.get(peerUsername);
+
+    if (existingStream && existingStream.id !== stream.id) {
+      if (!existingStream.getTracks().some((track) => track.id === event.track.id)) {
+        existingStream.addTrack(event.track);
+      }
+      remoteStreams.set(peerUsername, existingStream);
+    } else {
+      remoteStreams.set(peerUsername, stream);
+    }
+
+    bindStreamState(remoteStreams.get(peerUsername), () => renderVideoPanel());
     renderVideoPanel();
   };
 
@@ -760,10 +1129,20 @@ async function ensureLocalMedia() {
     throw new Error('Goruntulu konusma icin guvenli baglanti gerekli. localhost veya HTTPS kullan.');
   }
 
+  const videoConstraints = {
+    width: { ideal: 1280 },
+    height: { ideal: 720 },
+    facingMode: 'user'
+  };
+  const audioConstraints = {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true
+  };
   const attempts = [
-    { video: true, audio: true, label: '' },
-    { video: true, audio: false, label: 'Mikrofon izni olmadigi icin sadece kamera acildi.' },
-    { video: false, audio: true, label: 'Kamera izni olmadigi icin sadece mikrofon acildi.' }
+    { video: videoConstraints, audio: audioConstraints, label: '' },
+    { video: videoConstraints, audio: false, label: 'Mikrofon izni olmadigi icin sadece kamera acildi.' },
+    { video: false, audio: audioConstraints, label: 'Kamera izni olmadigi icin sadece mikrofon acildi.' }
   ];
 
   let lastError = null;
@@ -773,6 +1152,7 @@ async function ensureLocalMedia() {
       micEnabled = Boolean(localStream.getAudioTracks().length);
       cameraEnabled = Boolean(localStream.getVideoTracks().length);
       lastCallCapabilityMessage = attempt.label;
+      bindStreamState(localStream, () => renderVideoPanel());
       renderVideoPanel();
       return localStream;
     } catch (error) {
@@ -788,11 +1168,22 @@ async function ensureVideoTrack() {
     await ensureLocalMedia();
   }
 
-  if (localStream?.getVideoTracks().length) {
+  if (getActiveTrack(localStream, 'video')) {
+    localStream.getVideoTracks().forEach((track) => {
+      track.enabled = true;
+    });
+    cameraEnabled = true;
+    renderVideoPanel();
     return localStream;
   }
 
-  const cameraStream = await navigator.mediaDevices.getUserMedia({ video: true });
+  const cameraStream = await navigator.mediaDevices.getUserMedia({
+    video: {
+      width: { ideal: 1280 },
+      height: { ideal: 720 },
+      facingMode: 'user'
+    }
+  });
   const [videoTrack] = cameraStream.getVideoTracks();
   if (!videoTrack) {
     throw new Error('Kamera acilamadi.');
@@ -800,11 +1191,14 @@ async function ensureVideoTrack() {
 
   localStream.addTrack(videoTrack);
   cameraEnabled = true;
+  bindStreamState(localStream, () => renderVideoPanel());
 
-  for (const [peerUsername, pc] of peerConnections.entries()) {
-    pc.addTrack(videoTrack, localStream);
-    if (currentUser < peerUsername) {
-      initiateOffer(peerUsername).catch(() => {});
+  for (const pc of peerConnections.values()) {
+    const sender = pc.getSenders().find((item) => item.track?.kind === 'video');
+    if (sender) {
+      sender.replaceTrack(videoTrack).catch(() => {});
+    } else {
+      pc.addTrack(videoTrack, localStream);
     }
   }
 
@@ -814,51 +1208,58 @@ async function ensureVideoTrack() {
 
 async function initiateOffer(peerUsername) {
   const pc = createPeerConnection(peerUsername);
+  if (pc.signalingState !== 'stable') {
+    return;
+  }
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
-  ws.send(JSON.stringify({
-    type: 'webrtcSignal',
-    username: currentUser,
-    target: peerUsername,
-    channelId: currentChannelId,
-    signal: { type: 'offer', sdp: offer }
-  }));
+  sendRtcSignal(peerUsername, { type: 'offer', sdp: pc.localDescription });
 }
 
 async function handleIncomingSignal(data) {
   const { from, signal } = data;
+  if (data.channelId) {
+    activeCallChannelId = data.channelId;
+  }
+
   try {
     await ensureLocalMedia();
   } catch (error) {
     showToast(explainMediaError(error));
     return;
   }
+
   const pc = createPeerConnection(from);
 
-  if (signal.type === 'offer') {
-    await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
-    ws.send(JSON.stringify({
-      type: 'webrtcSignal',
-      username: currentUser,
-      target: from,
-      channelId: currentChannelId,
-      signal: { type: 'answer', sdp: answer }
-    }));
-    return;
-  }
+  if (signal.type === 'offer' || signal.type === 'answer') {
+    const description = new RTCSessionDescription(signal.sdp);
+    const offerCollision = description.type === 'offer'
+      && (makingOffer.get(from) || pc.signalingState !== 'stable');
+    const shouldIgnoreOffer = !isPolitePeer(from) && offerCollision;
+    ignoredOffer.set(from, shouldIgnoreOffer);
 
-  if (signal.type === 'answer') {
-    await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+    if (shouldIgnoreOffer) {
+      return;
+    }
+
+    await pc.setRemoteDescription(description);
+
+    if (description.type === 'offer') {
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      sendRtcSignal(from, { type: 'answer', sdp: pc.localDescription });
+    }
+    renderVideoPanel();
     return;
   }
 
   if (signal.type === 'candidate' && signal.candidate) {
     try {
       await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
-    } catch {
-      // Ignore transient ICE timing issues in this MVP.
+    } catch (error) {
+      if (!ignoredOffer.get(from)) {
+        throw error;
+      }
     }
   }
 }
@@ -1656,8 +2057,8 @@ function connectWS() {
       renderVideoPanel();
       const peers = (data.participants || []).filter((username) => username !== currentUser);
       peers.forEach((peerUsername) => {
-        if (currentUser < peerUsername && localStream) {
-          initiateOffer(peerUsername).catch(() => showToast('Video baglantisi baslatilamadi.'));
+        if (localStream) {
+          createPeerConnection(peerUsername);
         }
       });
       return;
@@ -2116,9 +2517,28 @@ function toggleVoice() {
 }
 
 function joinVoice() {
-  if (!currentVoiceChannelId) {
-    toggleVoice();
+  if (currentVoiceChannelId) {
+    renderCallOverlay();
+    return;
   }
+
+  const currentChannel = getCurrentChannel();
+  const targetChannel = currentChannel?.kind === 'voice' ? currentChannel : getFirstVoiceChannel();
+  if (!targetChannel) {
+    alert('Sunucuda kullanilabilir bir sesli kanal yok.');
+    return;
+  }
+
+  currentVoiceChannelId = targetChannel.id;
+  ws.send(JSON.stringify({
+    type: 'joinVoice',
+    username: currentUser,
+    serverId: currentServerId,
+    channelId: targetChannel.id
+  }));
+  renderVoicePanel();
+  renderHeader();
+  renderCallOverlay();
 }
 
 function leaveVoice() {
@@ -2128,15 +2548,31 @@ function leaveVoice() {
 }
 
 async function startVideoCall() {
-  const channel = getCallChannel();
+  let channel = getCallChannel();
   if (!channel) {
-    alert('Goruntulu konusma icin once bir sesli odaya katil.');
-    return;
+    channel = getFirstVoiceChannel();
+    if (!channel) {
+      alert('Goruntulu konusma icin once bir sesli odaya katil.');
+      return;
+    }
+  }
+
+  if (currentVoiceChannelId !== channel.id) {
+    currentVoiceChannelId = channel.id;
+    ws.send(JSON.stringify({
+      type: 'joinVoice',
+      username: currentUser,
+      serverId: currentServerId,
+      channelId: channel.id
+    }));
+    renderVoicePanel();
+    renderHeader();
   }
 
   try {
+    openCallOverlay();
     await ensureLocalMedia();
-    if (!localStream.getVideoTracks().length) {
+    if (!getActiveTrack(localStream, 'video')) {
       try {
         await ensureVideoTrack();
         lastCallCapabilityMessage = 'Kamera ayri olarak tekrar istendi ve etkinlestirildi.';
@@ -2176,7 +2612,7 @@ function endVideoCall() {
   ws.send(JSON.stringify({
     type: 'leaveCall',
     username: currentUser,
-    channelId: activeCallChannelId || currentChannelId
+    channelId: activeCallChannelId || currentVoiceChannelId || currentChannelId
   }));
   stopLocalMedia();
   activeCallChannelId = null;
@@ -2202,9 +2638,13 @@ function toggleCamera() {
     showToast('Once goruntulu konusma baslat.');
     return;
   }
-  if (!localStream.getVideoTracks().length) {
+  if (!getActiveTrack(localStream, 'video')) {
     ensureVideoTrack()
-      .then(() => showToast('Kamera eklendi.'))
+      .then(() => {
+        lastCallCapabilityMessage = 'Kamera tekrar istendi ve baglanti yenilendi.';
+        renderVideoPanel();
+        showToast('Kamera eklendi.');
+      })
       .catch((error) => showToast(explainMediaError(error)));
     return;
   }
@@ -2306,53 +2746,7 @@ function showUtilityHub() {
 }
 
 function showCallHub() {
-  const server = getCurrentServer();
-  if (!server) {
-    return;
-  }
-
-  renderVoicePanel();
-  renderVideoPanel();
-
-  const voiceChannel = getCurrentChannel()?.kind === 'voice'
-    ? getCurrentChannel()
-    : (getFirstVoiceChannel(server) || null);
-
-  showModal(`
-    <h2>Ses ve Goruntulu Konusma</h2>
-    <div class="report-card"><strong>Hedef oda</strong><div class="report-meta">${escapeHtml(voiceChannel?.name || 'Sesli kanal yok')}</div></div>
-    <div class="report-card">${voicePanel.innerHTML}</div>
-    <div class="report-card">${videoPanel.innerHTML}</div>
-    <button id="callGoBtn" class="modal-btn primary">Sesli Odaya Git</button>
-    <button id="callJoinBtn" class="modal-btn secondary">Voice Katil</button>
-    <button id="callStartBtn" class="modal-btn secondary">Goruntulu Baslat</button>
-    <button id="callEndBtn" class="modal-btn secondary">Goruntulu Bitir</button>
-  `);
-
-  document.getElementById('callGoBtn').onclick = () => {
-    hideModal();
-    if (voiceChannel) {
-      switchChannel(voiceChannel.id);
-    }
-  };
-  document.getElementById('callJoinBtn').onclick = () => {
-    hideModal();
-    if (voiceChannel && getCurrentChannel()?.id !== voiceChannel.id) {
-      switchChannel(voiceChannel.id);
-    }
-    joinVoice();
-  };
-  document.getElementById('callStartBtn').onclick = () => {
-    hideModal();
-    if (voiceChannel && getCurrentChannel()?.id !== voiceChannel.id) {
-      switchChannel(voiceChannel.id);
-    }
-    startVideoCall();
-  };
-  document.getElementById('callEndBtn').onclick = () => {
-    hideModal();
-    endVideoCall();
-  };
+  openCallOverlay();
 }
 
 function openQuickActions() {
@@ -2496,7 +2890,14 @@ window.onload = () => {
   endVideoBtn.onclick = endVideoCall;
   toggleMicBtn.onclick = toggleMic;
   toggleCameraBtn.onclick = toggleCamera;
-  videoBtn.onclick = showCallHub;
+  videoBtn.onclick = openCallOverlay;
+  callOverlayJoinBtn.onclick = joinVoice;
+  callOverlayStartBtn.onclick = startVideoCall;
+  callOverlayMicBtn.onclick = toggleMic;
+  callOverlayCameraBtn.onclick = toggleCamera;
+  callOverlayEndBtn.onclick = endVideoCall;
+  callOverlayCloseBtn.onclick = () => closeCallOverlay({ minimized: Boolean(activeCallChannelId || localStream) });
+  callOverlayMinimizeBtn.onclick = () => closeCallOverlay({ minimized: Boolean(activeCallChannelId || localStream) });
   searchBtn.onclick = showSearchModal;
   pinBtn.onclick = showPinnedInfo;
   membersToggleBtn.onclick = toggleMembersPanel;
@@ -2552,5 +2953,18 @@ window.onload = () => {
 
   window.addEventListener('resize', () => {
     renderMobileLayout();
+    renderCallOverlay();
+  });
+
+  callOverlay.onclick = (event) => {
+    if (event.target === callOverlay) {
+      closeCallOverlay({ minimized: Boolean(activeCallChannelId || localStream) });
+    }
+  };
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && callOverlayOpen) {
+      closeCallOverlay({ minimized: Boolean(activeCallChannelId || localStream) });
+    }
   });
 };
