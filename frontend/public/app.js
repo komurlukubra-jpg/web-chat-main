@@ -2,6 +2,7 @@ const API = {
   bootstrap: '/api/bootstrap',
   register: '/api/register',
   login: '/api/login',
+  logout: '/api/logout',
   createServer: '/api/server',
   createCategory: '/api/category',
   createChannel: '/api/channel',
@@ -37,6 +38,8 @@ let localStream = null;
 let audioContext = null;
 let notificationsEnabled = false;
 let mobileView = 'chat';
+let replyTarget = null;
+let shouldReconnect = true;
 const peerConnections = new Map();
 const remoteStreams = new Map();
 let lastCallCapabilityMessage = '';
@@ -49,6 +52,7 @@ const serverInfoName = document.getElementById('serverInfoName');
 const pinnedMessageText = document.getElementById('pinnedMessageText');
 const presenceSelect = document.getElementById('presenceSelect');
 const messageInput = document.getElementById('messageInput');
+const replyPreview = document.getElementById('replyPreview');
 const sendBtn = document.getElementById('sendBtn');
 const chatArea = document.getElementById('chatArea');
 const memberList = document.getElementById('memberList');
@@ -98,7 +102,8 @@ const mobileContextTag = document.getElementById('mobileContextTag');
 const mobileChannelsSummary = document.getElementById('mobileChannelsSummary');
 const mobilePeopleSummary = document.getElementById('mobilePeopleSummary');
 
-let currentTheme = localStorage.getItem('community-theme') || 'dark';
+let currentTheme = localStorage.getItem('community-theme')
+  || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
 let micEnabled = true;
 let cameraEnabled = true;
 
@@ -326,6 +331,128 @@ function escapeHtml(value) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
+}
+
+function normalizeUsernameKey(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function formatLastSeen(timestamp) {
+  if (!timestamp) {
+    return 'az once';
+  }
+
+  const diff = Date.now() - timestamp;
+  const minutes = Math.max(1, Math.round(diff / 60000));
+  if (minutes < 60) {
+    return `${minutes} dk once`;
+  }
+
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) {
+    return `${hours} sa once`;
+  }
+
+  const days = Math.round(hours / 24);
+  return `${days} gun once`;
+}
+
+function findUserByMention(rawUsername) {
+  const normalized = normalizeUsernameKey(rawUsername);
+  return appState.users.find((user) => normalizeUsernameKey(user.username) === normalized) || null;
+}
+
+function messageMentionsUser(text, username = currentUser) {
+  const normalized = normalizeUsernameKey(username);
+  if (!normalized) {
+    return false;
+  }
+
+  const matches = String(text || '').matchAll(/@([\p{L}\p{N}_.-]{3,24})/gu);
+  for (const match of matches) {
+    if (normalizeUsernameKey(match[1]) === normalized) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function renderMessageText(text) {
+  const source = String(text || '');
+  let html = '';
+  let lastIndex = 0;
+
+  for (const match of source.matchAll(/@([\p{L}\p{N}_.-]{3,24})/gu)) {
+    const [fullMatch, candidate] = match;
+    const matchIndex = match.index ?? 0;
+    html += escapeHtml(source.slice(lastIndex, matchIndex));
+    const matchedUser = findUserByMention(candidate);
+    if (matchedUser) {
+      const isCurrent = normalizeUsernameKey(matchedUser.username) === normalizeUsernameKey(currentUser);
+      html += `<span class="mention-pill ${isCurrent ? 'current' : ''}">@${escapeHtml(matchedUser.username)}</span>`;
+    } else {
+      html += escapeHtml(fullMatch);
+    }
+    lastIndex = matchIndex + fullMatch.length;
+  }
+
+  html += escapeHtml(source.slice(lastIndex));
+  return html;
+}
+
+function setReplyTarget(message) {
+  if (!message) {
+    return;
+  }
+
+  replyTarget = {
+    id: message.id,
+    user: message.user,
+    text: message.text
+  };
+  renderReplyComposer();
+  messageInput.focus();
+}
+
+function clearReplyTarget() {
+  replyTarget = null;
+  renderReplyComposer();
+}
+
+function renderReplyComposer() {
+  if (!replyPreview) {
+    return;
+  }
+
+  if (!replyTarget) {
+    replyPreview.classList.add('hidden');
+    replyPreview.innerHTML = '';
+    return;
+  }
+
+  replyPreview.classList.remove('hidden');
+  replyPreview.innerHTML = `
+    <div class="reply-preview-copy">
+      <strong>${escapeHtml(replyTarget.user)} kullanicisini yanitliyorsun</strong>
+      <span>${escapeHtml(replyTarget.text)}</span>
+    </div>
+    <button type="button" id="cancelReplyBtn" class="mini-action-btn">Vazgec</button>
+  `;
+
+  document.getElementById('cancelReplyBtn').onclick = clearReplyTarget;
+}
+
+function replyMarkup(message) {
+  if (!message.replyTo) {
+    return '';
+  }
+
+  return `
+    <button class="reply-reference" data-reply-origin="${message.replyTo.id}">
+      <span class="reply-reference-author">${escapeHtml(message.replyTo.user)}</span>
+      <span class="reply-reference-text">${escapeHtml(message.replyTo.text)}</span>
+    </button>
+  `;
 }
 
 function userInitials(username) {
@@ -647,6 +774,7 @@ function renderHeader() {
 
 function renderComposerState() {
   const channel = getCurrentChannel();
+  renderReplyComposer();
   if (isDmConversation()) {
     messageInput.placeholder = `${activeDmUser} kullanicisina mesaj gonder`;
     sendBtn.textContent = 'Gonder';
@@ -687,6 +815,7 @@ function renderMessages() {
   let lastDateKey = '';
   const isDmThread = isDmConversation();
   list.forEach((message) => {
+    message.replyTo = message.replyTo || null;
     const messageDateKey = new Date(message.time).toDateString();
     if (messageDateKey !== lastDateKey) {
       const divider = document.createElement('div');
@@ -706,11 +835,14 @@ function renderMessages() {
             return `<button class="reaction-chip ${active}" data-message-id="${message.id}" data-emoji="${emoji}">${emoji} ${users.length}</button>`;
           })
           .join('');
-    const controls = !isDmThread && canManageMessage(message)
+    const controls = !isDmThread
       ? `
         <div class="message-controls">
-          <button class="tiny-action" data-action="edit" data-message-id="${message.id}">Duzenle</button>
-          <button class="tiny-action danger" data-action="delete" data-message-id="${message.id}">Sil</button>
+          <button class="tiny-action" data-action="reply" data-message-id="${message.id}">Yanitla</button>
+          ${canManageMessage(message) ? `
+            <button class="tiny-action" data-action="edit" data-message-id="${message.id}">Duzenle</button>
+            <button class="tiny-action danger" data-action="delete" data-message-id="${message.id}">Sil</button>
+          ` : ''}
         </div>
       `
       : '';
@@ -727,7 +859,8 @@ function renderMessages() {
             : ''}
         </div>
         <div class="message-stack">
-          <div class="message-body">${escapeHtml(message.text)}</div>
+          ${replyMarkup(message)}
+          <div class="message-body ${messageMentionsUser(message.text) ? 'mentioned' : ''}">${renderMessageText(message.text)}</div>
           <div class="reactions-row">${reactions}</div>
           <div class="message-actions-row">
             <div class="reaction-palette">
@@ -776,6 +909,11 @@ function renderMessages() {
       button.onclick = () => {
         const messageId = button.dataset.messageId;
         const action = button.dataset.action;
+        const targetMessage = (appState.messages[currentChannelId] || []).find((message) => message.id === messageId);
+        if (action === 'reply') {
+          setReplyTarget(targetMessage);
+          return;
+        }
         if (action === 'delete') {
           ws.send(JSON.stringify({
             type: 'deleteMessage',
@@ -787,7 +925,6 @@ function renderMessages() {
           return;
         }
 
-        const targetMessage = (appState.messages[currentChannelId] || []).find((message) => message.id === messageId);
         const nextText = prompt('Mesaji duzenle:', targetMessage?.text || '');
         if (nextText && nextText.trim()) {
           ws.send(JSON.stringify({
@@ -798,6 +935,15 @@ function renderMessages() {
             messageId,
             text: nextText.trim()
           }));
+        }
+      };
+    });
+
+    chatArea.querySelectorAll('[data-reply-origin]').forEach((button) => {
+      button.onclick = () => {
+        const originMessage = (appState.messages[currentChannelId] || []).find((message) => message.id === button.dataset.replyOrigin);
+        if (originMessage) {
+          setReplyTarget(originMessage);
         }
       };
     });
@@ -831,6 +977,7 @@ function renderMembers() {
 
   sortedMembers.forEach((member) => {
     const presence = appState.presence[member.username]?.status || 'offline';
+    const lastSeenAt = appState.presence[member.username]?.lastSeenAt || null;
     const item = document.createElement('div');
     item.className = 'member-row';
     item.innerHTML = `
@@ -838,7 +985,7 @@ function renderMembers() {
         ${avatarMarkup(member.username, 'member-avatar')}
         <div>
           <div class="member-name">${member.username}</div>
-          <div class="member-role">${member.role.toUpperCase()}</div>
+          <div class="member-role">${member.role.toUpperCase()}${presence === 'offline' && lastSeenAt ? ` • Son gorulme ${formatLastSeen(lastSeenAt)}` : ''}</div>
         </div>
       </div>
       <div class="member-actions">
@@ -919,6 +1066,7 @@ function showUserProfile(username) {
   const member = server?.members.find((item) => item.username === username);
   const user = appState.users.find((item) => item.username === username);
   const presence = appState.presence[username]?.status || user?.status || 'offline';
+  const lastSeenAt = appState.presence[username]?.lastSeenAt || user?.lastSeenAt || null;
   const dmCount = (appState.directMessages[username] || []).length;
   const voiceEntry = Object.entries(appState.voicePresence).find(([, users]) => users.includes(username));
   const voiceChannel = server?.categories.flatMap((category) => category.channels).find((channel) => channel.id === voiceEntry?.[0]);
@@ -929,6 +1077,7 @@ function showUserProfile(username) {
     <div class="report-card">
       <div><strong>${escapeHtml(username)}</strong></div>
       <div class="report-meta">Durum: ${escapeHtml(presence)}</div>
+      <div class="report-meta">${presence === 'offline' && lastSeenAt ? `Son gorulme: ${formatLastSeen(lastSeenAt)}` : 'Su anda aktif gorunuyor.'}</div>
       <div class="report-meta">Rol: ${escapeHtml((member?.role || 'member').toUpperCase())}</div>
       <div class="report-meta">DM sayisi: ${dmCount}</div>
       <div class="report-meta">Sesli oda: ${escapeHtml(voiceChannel?.name || 'yok')}</div>
@@ -1124,6 +1273,7 @@ function renderTypingIndicator() {
 
 function switchServer(serverId) {
   currentServerId = serverId;
+  clearReplyTarget();
   const server = getCurrentServer();
   const firstChannel = server?.categories[0]?.channels[0];
   if (firstChannel) {
@@ -1148,6 +1298,7 @@ function switchChannel(channelId) {
   activeConversationType = 'channel';
   activeSidebarTab = 'members';
   activeDmUser = null;
+  clearReplyTarget();
   currentChannelId = channelId;
   const server = getCurrentServer();
   const channel = getCurrentChannel();
@@ -1177,6 +1328,7 @@ function openDm(username) {
   activeConversationType = 'dm';
   activeSidebarTab = 'dm';
   activeDmUser = username;
+  clearReplyTarget();
   unreadDmCounts[username] = 0;
   if (ws?.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({
@@ -1246,12 +1398,15 @@ function connectWS() {
       appState.messages[channelId].push(message);
       if (message.user !== currentUser) {
         playNotificationSound();
-        showBrowserNotification(`${message.user} yeni mesaj`, message.text || 'Yeni kanal mesaji');
+        const mentionLabel = messageMentionsUser(message.text) ? ' seni etiketledi' : ' yeni mesaj';
+        showBrowserNotification(`${message.user}${mentionLabel}`, message.text || 'Yeni kanal mesaji');
       }
       if (channelId === currentChannelId) {
         renderMessages();
         if (message.user !== currentUser) {
-          showToast(`${message.user} yeni mesaj gonderdi.`);
+          showToast(messageMentionsUser(message.text)
+            ? `${message.user} seni etiketledi.`
+            : `${message.user} yeni mesaj gonderdi.`);
         }
       }
       return;
@@ -1358,11 +1513,17 @@ function connectWS() {
     }
 
     if (data.type === 'error') {
+      if (/oturum|giris/i.test(data.message || '')) {
+        shouldReconnect = false;
+      }
       alert(data.message);
     }
   };
 
-  ws.onclose = () => {
+  ws.onclose = (event) => {
+    if (!shouldReconnect || [4001, 4004, 4009].includes(event.code) || !currentUser) {
+      return;
+    }
     setTimeout(connectWS, 1000);
   };
 }
@@ -1370,12 +1531,13 @@ function connectWS() {
 async function bootstrap() {
   const data = await request(`${API.bootstrap}?username=${encodeURIComponent(currentUser)}`);
   appState = data;
+  currentUser = data.currentUser?.username || currentUser;
   unreadDmCounts = {};
   currentServerId = appState.servers[0]?.id || null;
   currentChannelId = appState.servers[0]?.categories[0]?.channels[0]?.id || null;
   currentVoiceChannelId = appState.presence[currentUser]?.voiceChannelId || null;
   appState.callPresence = appState.callPresence || {};
-  presenceSelect.value = appState.presence[currentUser]?.status || 'online';
+  presenceSelect.value = appState.currentUser?.preferredStatus || appState.presence[currentUser]?.status || 'online';
   renderAll();
   connectWS();
 }
@@ -1383,7 +1545,7 @@ async function bootstrap() {
 function showLogin() {
   showModal(`
     <h2>Topluluk Sunucusu Giris</h2>
-    <p class="modal-copy">Demo hesaplar: admin/123, moderator/123, student/123</p>
+    <p class="modal-copy">Demo hesaplar: admin/123, moderator/123, student/123. Ayni hesap ayni anda iki farkli sekmede acilamaz.</p>
     <input id="loginUser" class="modal-input" placeholder="Kullanici adi" />
     <input id="loginPass" class="modal-input" type="password" placeholder="Sifre" />
     <button id="loginSubmit" class="modal-btn primary">Giris Yap</button>
@@ -1392,9 +1554,11 @@ function showLogin() {
 
   document.getElementById('loginSubmit').onclick = async () => {
     try {
-      currentUser = document.getElementById('loginUser').value.trim();
+      const username = document.getElementById('loginUser').value.trim();
       const password = document.getElementById('loginPass').value;
-      await request(API.login, { method: 'POST', body: JSON.stringify({ username: currentUser, password }) });
+      const result = await request(API.login, { method: 'POST', body: JSON.stringify({ username, password }) });
+      currentUser = result.username || username;
+      shouldReconnect = true;
       hideModal();
       document.getElementById('appShell').classList.remove('hidden');
       bootstrap();
@@ -1409,7 +1573,7 @@ function showLogin() {
 function showRegister() {
   showModal(`
     <h2>Yeni Uye</h2>
-    <p class="modal-copy">Kayit olan herkes mevcut sunuculara member olarak eklenir.</p>
+    <p class="modal-copy">Kayit olan herkes mevcut sunuculara member olarak eklenir. Kullanici adlari tekildir ve 3-24 karakter arasinda olmalidir.</p>
     <input id="regUser" class="modal-input" placeholder="Kullanici adi" />
     <input id="regPass" class="modal-input" type="password" placeholder="Sifre" />
     <input id="regAvatar" class="modal-input" type="file" accept="image/*" />
@@ -1471,9 +1635,11 @@ function sendMessage() {
       type: 'dmMessage',
       username: currentUser,
       peerUsername: activeDmUser,
-      text
+      text,
+      replyTo: replyTarget
     }));
     messageInput.value = '';
+    clearReplyTarget();
     ws.send(JSON.stringify({
       type: 'typing',
       scope: 'dm',
@@ -1499,9 +1665,11 @@ function sendMessage() {
     serverId: currentServerId,
     channelId: currentChannelId,
     username: currentUser,
-    text
+    text,
+    replyTo: replyTarget
   }));
   messageInput.value = '';
+  clearReplyTarget();
   if (ws?.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({
       type: 'typing',
@@ -1512,6 +1680,30 @@ function sendMessage() {
       isTyping: false
     }));
   }
+}
+
+async function logout() {
+  shouldReconnect = false;
+  try {
+    if (currentUser) {
+      await request(API.logout, {
+        method: 'POST',
+        body: JSON.stringify({ username: currentUser })
+      });
+    }
+  } catch {
+    // Best-effort logout so stale local pages do not block the user.
+  }
+
+  if (ws) {
+    try {
+      ws.close(4001, 'logout');
+    } catch {
+      // Ignore close failures during reload.
+    }
+  }
+
+  location.reload();
 }
 
 async function createServer() {
@@ -2097,7 +2289,7 @@ window.onload = () => {
   reportBtn.onclick = reportUser;
   joinVoiceBtn.onclick = joinVoice;
   leaveVoiceBtn.onclick = leaveVoice;
-  logoutBtn.onclick = () => location.reload();
+  logoutBtn.onclick = logout;
   themeToggleBtn.onclick = () => {
     applyTheme(currentTheme === 'dark' ? 'light' : 'dark');
   };

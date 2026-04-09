@@ -12,6 +12,8 @@ const wss = new WebSocket.Server({ server });
 const DATA_DIR = path.join(__dirname, 'data');
 const STATE_FILE = path.join(DATA_DIR, 'state.json');
 const FRONTEND_DIR = path.join(__dirname, '..', 'frontend', 'public');
+const RESERVED_USERNAMES = new Set(['system', 'bot']);
+const ALLOWED_PRESENCE = new Set(['online', 'away', 'busy']);
 
 app.use(express.json({ limit: '10mb' }));
 
@@ -21,6 +23,14 @@ function uid(prefix) {
 
 function now() {
   return Date.now();
+}
+
+function normalizeUsername(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function isValidUsername(username) {
+  return /^[\p{L}\p{N}_.-]{3,24}$/u.test(username);
 }
 
 function ensureDataDir() {
@@ -133,14 +143,18 @@ function normalizeState(loadedState) {
         status: user.status || 'offline',
         currentServerId: nextState.servers[0]?.id || null,
         currentChannelId: nextState.servers[0]?.categories?.[0]?.channels?.[0]?.id || null,
-        voiceChannelId: null
+        voiceChannelId: null,
+        lastSeenAt: null
       };
+    } else if (!('lastSeenAt' in nextState.presence[user.username])) {
+      nextState.presence[user.username].lastSeenAt = null;
     }
   });
 
   Object.keys(nextState.messages).forEach((channelId) => {
     nextState.messages[channelId] = (nextState.messages[channelId] || []).map((message) => ({
       reactions: {},
+      replyTo: null,
       ...message
     }));
   });
@@ -149,6 +163,7 @@ function normalizeState(loadedState) {
     nextState.directMessages[dmKey] = (nextState.directMessages[dmKey] || []).map((message) => ({
       reactions: {},
       seenBy: Array.isArray(message.seenBy) ? message.seenBy : [message.user],
+      replyTo: null,
       ...message
     }));
   });
@@ -166,19 +181,22 @@ function saveState() {
 }
 
 function sanitizeUser(user) {
+  const effectivePresence = getEffectivePresence(user.username);
   return {
     username: user.username,
     banned: Boolean(user.banned),
     mutedUntil: user.mutedUntil,
     avatar: user.avatar || null,
-    status: onlineUsers.has(user.username)
-      ? (state.presence[user.username]?.status || user.status || 'online')
-      : 'offline'
+    status: effectivePresence.status,
+    preferredStatus: state.presence[user.username]?.status || user.status || 'online',
+    lastSeenAt: effectivePresence.lastSeenAt || null
   };
 }
 
 function getDmKey(userA, userB) {
-  return [userA, userB].sort().join('__');
+  const canonicalA = getUser(userA)?.username || userA;
+  const canonicalB = getUser(userB)?.username || userB;
+  return [canonicalA, canonicalB].sort().join('__');
 }
 
 function getDmMessages(userA, userB) {
@@ -213,7 +231,95 @@ function buildVisibleDms(username) {
 }
 
 function getUser(username) {
-  return state.users.find((user) => user.username === username);
+  const normalized = normalizeUsername(username);
+  return state.users.find((user) => normalizeUsername(user.username) === normalized);
+}
+
+function ensurePresenceEntry(username) {
+  const user = getUser(username);
+  const canonicalUsername = user?.username || username;
+  if (!state.presence[canonicalUsername]) {
+    state.presence[canonicalUsername] = {
+      status: user?.status || 'online',
+      currentServerId: state.servers[0]?.id || null,
+      currentChannelId: state.servers[0]?.categories?.[0]?.channels?.[0]?.id || null,
+      voiceChannelId: null,
+      lastSeenAt: null
+    };
+  }
+  if (!('lastSeenAt' in state.presence[canonicalUsername])) {
+    state.presence[canonicalUsername].lastSeenAt = null;
+  }
+  return state.presence[canonicalUsername];
+}
+
+function getEffectivePresence(username) {
+  const user = getUser(username);
+  const canonicalUsername = user?.username || username;
+  const storedPresence = ensurePresenceEntry(canonicalUsername);
+  const isOnline = onlineUsers.has(canonicalUsername);
+
+  return {
+    ...storedPresence,
+    status: isOnline ? (storedPresence.status || user?.status || 'online') : 'offline',
+    lastSeenAt: isOnline ? null : (storedPresence.lastSeenAt || null)
+  };
+}
+
+function serializePresenceState() {
+  const serialized = {};
+  state.users.forEach((user) => {
+    serialized[user.username] = getEffectivePresence(user.username);
+  });
+  return serialized;
+}
+
+function setUserOnline(username) {
+  const user = getUser(username);
+  if (!user) {
+    return null;
+  }
+
+  onlineUsers.add(user.username);
+  const presence = ensurePresenceEntry(user.username);
+  presence.lastSeenAt = null;
+  return user.username;
+}
+
+function setUserOffline(username) {
+  const user = getUser(username);
+  if (!user) {
+    return null;
+  }
+
+  onlineUsers.delete(user.username);
+  const presence = ensurePresenceEntry(user.username);
+  presence.voiceChannelId = null;
+  presence.lastSeenAt = now();
+  Object.keys(state.voicePresence).forEach((channelId) => {
+    state.voicePresence[channelId] = (state.voicePresence[channelId] || []).filter((member) => member !== user.username);
+  });
+  removeUserFromCalls(user.username);
+  return user.username;
+}
+
+function sanitizeReply(replyTo) {
+  if (!replyTo || typeof replyTo !== 'object') {
+    return null;
+  }
+
+  const id = String(replyTo.id || '').trim();
+  const user = String(replyTo.user || '').trim();
+  const text = String(replyTo.text || '').trim();
+  if (!id || !user || !text) {
+    return null;
+  }
+
+  return {
+    id,
+    user,
+    text: text.slice(0, 180)
+  };
 }
 
 function getServer(serverId) {
@@ -273,7 +379,8 @@ function serializeServer(server, username) {
     members: server.members.map((serverMember) => ({
       username: serverMember.username,
       role: serverMember.role,
-      status: state.presence[serverMember.username]?.status || 'offline'
+      status: getEffectivePresence(serverMember.username).status,
+      lastSeenAt: getEffectivePresence(serverMember.username).lastSeenAt || null
     })),
     categories: visibleCategories,
     reports: server.reports,
@@ -298,16 +405,18 @@ function buildVisibleMessagesForUser(username) {
 }
 
 function buildBootstrap(username) {
+  const user = getUser(username);
+  const canonicalUsername = user?.username || username;
   return {
-    currentUser: sanitizeUser(getUser(username)),
+    currentUser: sanitizeUser(getUser(canonicalUsername)),
     users: state.users.map(sanitizeUser),
     servers: state.servers
-      .filter((serverItem) => getServerMember(serverItem, username))
-      .map((serverItem) => serializeServer(serverItem, username)),
-    messages: buildVisibleMessagesForUser(username),
-    directMessages: buildVisibleDms(username),
+      .filter((serverItem) => getServerMember(serverItem, canonicalUsername))
+      .map((serverItem) => serializeServer(serverItem, canonicalUsername)),
+    messages: buildVisibleMessagesForUser(canonicalUsername),
+    directMessages: buildVisibleDms(canonicalUsername),
     voicePresence: state.voicePresence,
-    presence: state.presence,
+    presence: serializePresenceState(),
     callPresence,
     typingState
   };
@@ -360,7 +469,7 @@ function broadcast(type, payload) {
 function broadcastState() {
   broadcast('stateUpdated', {
     users: state.users.map(sanitizeUser),
-    presence: state.presence,
+    presence: serializePresenceState(),
     voicePresence: state.voicePresence,
     callPresence,
     typingState
@@ -394,7 +503,7 @@ function broadcastServer(serverId) {
       messages: buildVisibleMessagesForUser(info.username),
       directMessages: buildVisibleDms(info.username),
       voicePresence: state.voicePresence,
-      presence: state.presence,
+      presence: serializePresenceState(),
       callPresence,
       typingState
     }));
@@ -425,6 +534,9 @@ function postSystemMessage(channelId, text) {
 function ensureMessageShape(message) {
   if (!message.reactions || typeof message.reactions !== 'object') {
     message.reactions = {};
+  }
+  if (!message.replyTo || typeof message.replyTo !== 'object') {
+    message.replyTo = null;
   }
   return message;
 }
@@ -526,7 +638,7 @@ app.get('/api/bootstrap', (req, res) => {
     return res.status(403).json({ error: 'User is banned.' });
   }
 
-  res.json(buildBootstrap(username));
+  res.json(buildBootstrap(user.username));
 });
 
 app.get('/healthz', (req, res) => {
@@ -545,6 +657,14 @@ app.post('/api/register', (req, res) => {
 
   if (!username || !password) {
     return res.status(400).json({ error: 'Username and password required.' });
+  }
+
+  if (!isValidUsername(username)) {
+    return res.status(400).json({ error: 'Username 3-24 karakter olmali ve sadece harf, rakam, _, -, . icerebilir.' });
+  }
+
+  if (RESERVED_USERNAMES.has(normalizeUsername(username))) {
+    return res.status(400).json({ error: 'Bu kullanici adi ayrilmis.' });
   }
 
   if (avatar && (typeof avatar !== 'string' || !avatar.startsWith('data:image/'))) {
@@ -569,13 +689,14 @@ app.post('/api/register', (req, res) => {
     status: 'online',
     currentServerId: state.servers[0]?.id || null,
     currentChannelId: state.servers[0]?.categories[0]?.channels[0]?.id || null,
-    voiceChannelId: null
+    voiceChannelId: null,
+    lastSeenAt: null
   };
   ensureMemberships(username);
   saveState();
   broadcastState();
   state.servers.forEach((serverItem) => broadcastServer(serverItem.id));
-  res.json({ success: true });
+  res.json({ success: true, username });
 });
 
 app.post('/api/login', (req, res) => {
@@ -591,19 +712,15 @@ app.post('/api/login', (req, res) => {
     return res.status(403).json({ error: 'This user is banned.' });
   }
 
-  if (!state.presence[username]) {
-    state.presence[username] = {
-      status: 'online',
-      currentServerId: state.servers[0]?.id || null,
-      currentChannelId: state.servers[0]?.categories[0]?.channels[0]?.id || null,
-      voiceChannelId: null
-    };
+  if (onlineUsers.has(user.username) || getWsByUsername(user.username)) {
+    return res.status(409).json({ error: 'Bu hesap su anda baska bir oturumda acik.' });
   }
 
-  state.presence[username].status = 'online';
+  const presence = ensurePresenceEntry(user.username);
+  presence.lastSeenAt = null;
   saveState();
   broadcastState();
-  res.json({ success: true });
+  res.json({ success: true, username: user.username });
 });
 
 app.post('/api/server', (req, res) => {
@@ -800,13 +917,37 @@ app.post('/api/report', (req, res) => {
 
 app.post('/api/presence', (req, res) => {
   const { username, status } = req.body;
-  if (!state.presence[username]) {
+  const user = getUser(username);
+  if (!user) {
     return res.status(404).json({ error: 'User not found.' });
   }
 
-  state.presence[username].status = status || 'online';
+  if (status && !ALLOWED_PRESENCE.has(status)) {
+    return res.status(400).json({ error: 'Invalid presence value.' });
+  }
+
+  const presence = ensurePresenceEntry(user.username);
+  presence.status = status || 'online';
   saveState();
   broadcastState();
+  res.json({ success: true });
+});
+
+app.post('/api/logout', (req, res) => {
+  const user = getUser(req.body.username);
+  if (!user) {
+    return res.status(404).json({ error: 'User not found.' });
+  }
+
+  const userWs = getWsByUsername(user.username);
+  if (userWs) {
+    userWs.close(4001, 'logout');
+  } else {
+    setUserOffline(user.username);
+    saveState();
+    broadcastState();
+  }
+
   res.json({ success: true });
 });
 
@@ -831,8 +972,9 @@ app.post('/api/avatar', (req, res) => {
 const wsClients = new Map();
 
 function getWsByUsername(username) {
+  const normalized = normalizeUsername(username);
   for (const [client, info] of wsClients.entries()) {
-    if (info?.username === username && client.readyState === WebSocket.OPEN) {
+    if (normalizeUsername(info?.username) === normalized && client.readyState === WebSocket.OPEN) {
       return client;
     }
   }
@@ -872,8 +1014,23 @@ wss.on('connection', (ws) => {
     }
 
     if (data.type === 'identify') {
-      wsClients.set(ws, { username: data.username, currentCallChannelId: null });
-      onlineUsers.add(data.username);
+      const user = getUser(data.username);
+      if (!user) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Gecersiz oturum. Lutfen tekrar giris yap.' }));
+        ws.close(4004, 'unknown-user');
+        return;
+      }
+
+      const existingClient = getWsByUsername(user.username);
+      if (existingClient && existingClient !== ws) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Bu hesap baska bir oturumda acik.' }));
+        ws.close(4009, 'duplicate-session');
+        return;
+      }
+
+      wsClients.set(ws, { username: user.username, currentCallChannelId: null });
+      setUserOnline(user.username);
+      saveState();
       broadcastState();
       return;
     }
@@ -1055,10 +1212,11 @@ wss.on('connection', (ws) => {
 
       const message = {
         id: uid('msg'),
-        user: data.username,
-        text: data.text,
+        user: user.username,
+        text: data.text.trim(),
         time: now(),
-        reactions: {}
+        reactions: {},
+        replyTo: sanitizeReply(data.replyTo)
       };
 
       if (!state.messages[data.channelId]) {
@@ -1083,11 +1241,12 @@ wss.on('connection', (ws) => {
       const dmKey = getDmKey(data.username, data.peerUsername);
       const message = {
         id: uid('dm'),
-        user: data.username,
+        user: getUser(data.username).username,
         text: data.text.trim(),
         time: now(),
         reactions: {},
-        seenBy: [data.username]
+        seenBy: [getUser(data.username).username],
+        replyTo: sanitizeReply(data.replyTo)
       };
 
       state.directMessages[dmKey] = state.directMessages[dmKey] || [];
@@ -1202,11 +1361,11 @@ wss.on('connection', (ws) => {
   ws.on('close', () => {
     const info = wsClients.get(ws);
     if (info?.username) {
-      onlineUsers.delete(info.username);
-      removeUserFromCalls(info.username);
       Object.keys(typingState).forEach((scopeKey) => {
         setTyping(scopeKey, info.username, false);
       });
+      setUserOffline(info.username);
+      saveState();
       broadcast('callLeft', {
         username: info.username,
         channelId: info.currentCallChannelId
