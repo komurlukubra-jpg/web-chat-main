@@ -801,6 +801,28 @@ function attachRenderedVideo(id, stream, muted = false) {
   playVideoElement(element, muted);
 }
 
+async function tuneLocalMediaTracks(stream) {
+  const videoTrack = getActiveTrack(stream, 'video');
+  const audioTrack = getActiveTrack(stream, 'audio');
+
+  if (videoTrack) {
+    videoTrack.contentHint = 'detail';
+    try {
+      await videoTrack.applyConstraints({
+        width: { ideal: 1920, max: 1920 },
+        height: { ideal: 1080, max: 1080 },
+        frameRate: { ideal: 30, max: 30 }
+      });
+    } catch {
+      // Browsers may reject some ideal values; keep the acquired track.
+    }
+  }
+
+  if (audioTrack) {
+    audioTrack.contentHint = 'speech';
+  }
+}
+
 function renderCallOverlay() {
   if (!callOverlay) {
     return;
@@ -809,16 +831,27 @@ function renderCallOverlay() {
   const callChannel = getCallChannel() || getFirstVoiceChannel();
   const participants = getCurrentCallMembers();
   const tiles = getCallTiles();
-  const stageTile = getPreferredStageTile(tiles);
+  const focusedTile = getPreferredStageTile(tiles);
   const hasCall = Boolean(localStream || participants.length || remoteStreams.size || activeCallChannelId);
   const hasAudioTrack = Boolean(getActiveTrack(localStream, 'audio'));
   const hasVideoTrack = Boolean(getActiveTrack(localStream, 'video'));
+  const cameraOnCount = tiles.filter((tile) => tile.hasVideo).length;
+  const audioOnCount = tiles.filter((tile) => tile.hasAudio).length;
+  const galleryLayoutClass = tiles.length <= 1
+    ? 'layout-1'
+    : tiles.length === 2
+      ? 'layout-2'
+      : tiles.length === 3
+        ? 'layout-3'
+        : tiles.length === 4
+          ? 'layout-4'
+          : 'layout-many';
 
   callOverlayTitle.textContent = callChannel
     ? `# ${callChannel.name}`
     : 'Sesli Oda Sec';
   callOverlayMeta.textContent = callChannel
-    ? `${participants.length || 1} katilimci, Discord benzeri sahne gorunumu`
+    ? `${Math.max(participants.length, tiles.length || 1)} katilimci • ${cameraOnCount} kamera acik • ${audioOnCount} ses acik`
     : 'Once bir sesli odaya katil, sonra kamerayi baslat.';
 
   callOverlayStatus.textContent = hasCall
@@ -843,7 +876,7 @@ function renderCallOverlay() {
   callOverlayMicBtn.className = `call-dock-btn ${hasAudioTrack ? (micEnabled ? 'active' : 'muted') : ''}`.trim();
   callOverlayCameraBtn.className = `call-dock-btn ${hasVideoTrack ? (cameraEnabled ? 'active' : 'muted') : 'primary'}`.trim();
 
-  if (!stageTile) {
+  if (!focusedTile) {
     callStage.innerHTML = `
       <div class="call-stage-card placeholder">
         <div class="call-empty-big">
@@ -860,52 +893,47 @@ function renderCallOverlay() {
     return;
   }
 
-  const stageVideoId = stageTile.hasVideo ? `callStageVideo_${stageTile.key}` : '';
   callStage.innerHTML = `
-    <div class="call-stage-card ${stageTile.hasVideo ? '' : 'placeholder'}">
-      ${stageTile.hasVideo
-        ? `<video id="${stageVideoId}" autoplay ${stageTile.isSelf ? 'muted' : ''} playsinline></video>`
-        : `<div class="call-stage-fallback">
-            ${callAvatarMarkup(stageTile.username)}
-            <strong>${escapeHtml(stageTile.isSelf ? 'Kameran kapali' : `${stageTile.username} kamera acmadi`)}</strong>
-            <div>${escapeHtml(callStatusText(stageTile))}</div>
-          </div>`}
-      <div class="call-stage-meta">
-        <div>
-          <div class="call-stage-name">${escapeHtml(stageTile.isSelf ? 'Sen' : stageTile.username)}</div>
-          <div class="call-stage-state">${escapeHtml(callStatusText(stageTile))}</div>
-        </div>
-        <div class="call-badge-row">
-          <span class="call-badge ${stageTile.hasAudio ? 'on' : 'off'}">${stageTile.hasAudio ? 'Ses acik' : 'Ses kapali'}</span>
-          <span class="call-badge ${stageTile.hasVideo ? 'on' : 'off'}">${stageTile.hasVideo ? 'Kamera acik' : 'Kamera kapali'}</span>
-        </div>
-      </div>
+    <div class="call-gallery ${galleryLayoutClass}">
+      ${tiles.map((tile) => {
+        const videoId = tile.hasVideo ? `callGalleryVideo_${tile.key}` : '';
+        return `
+          <article class="call-gallery-tile ${tile.key === focusedTile.key ? 'active' : ''}" data-call-focus="${escapeHtml(tile.key)}">
+            <div class="call-gallery-media">
+              ${tile.hasVideo
+                ? `<video id="${videoId}" autoplay ${tile.isSelf ? 'muted' : ''} playsinline></video>`
+                : `<div class="call-stage-fallback">
+                    ${callAvatarMarkup(tile.username)}
+                    <strong>${escapeHtml(tile.isSelf ? 'Kameran kapali' : `${tile.username} kamera acmadi`)}</strong>
+                    <div>${escapeHtml(callStatusText(tile))}</div>
+                  </div>`}
+            </div>
+            <div class="call-gallery-overlay">
+              <div class="call-gallery-corner">
+                <span class="call-gallery-chip ${tile.hasAudio ? '' : 'off'}">${tile.hasAudio ? 'Ses acik' : 'Mute'}</span>
+                <span class="call-gallery-chip ${tile.hasVideo ? '' : 'off'}">${tile.hasVideo ? 'Kamera acik' : 'Kamera kapali'}</span>
+              </div>
+              <div class="call-gallery-meta">
+                <div class="call-gallery-info">
+                  <div class="call-gallery-name">${escapeHtml(tile.isSelf ? 'Sen' : tile.username)}</div>
+                  <div class="call-gallery-copy">${escapeHtml(callStatusText(tile))}</div>
+                </div>
+                ${tile.key === focusedTile.key ? '<span class="call-gallery-chip">Odak</span>' : ''}
+              </div>
+            </div>
+          </article>
+        `;
+      }).join('')}
     </div>
   `;
 
-  callFilmstrip.innerHTML = tiles.map((tile) => {
-    const stripVideoId = tile.hasVideo ? `callStripVideo_${tile.key}` : '';
-    return `
-      <button class="call-film-button" data-call-focus="${escapeHtml(tile.key)}">
-        <div class="call-film-card ${tile.key === stageTile.key ? 'active' : ''}">
-          <div class="call-film-media">
-            ${tile.hasVideo
-              ? `<video id="${stripVideoId}" autoplay ${tile.isSelf ? 'muted' : ''} playsinline></video>`
-              : `<div class="call-film-fallback">
-                  ${callAvatarMarkup(tile.username, 'call-avatar small')}
-                </div>`}
-          </div>
-          <div class="call-film-caption">
-            <div>
-              <strong>${escapeHtml(tile.isSelf ? 'Sen' : tile.username)}</strong>
-              <span>${escapeHtml(callStatusText(tile))}</span>
-            </div>
-            <span class="call-badge ${tile.hasVideo ? 'on' : 'off'}">${tile.hasVideo ? 'Cam' : 'Off'}</span>
-          </div>
-        </div>
-      </button>
-    `;
-  }).join('');
+  callFilmstrip.innerHTML = `
+    <span class="call-summary-chip accent">Galeri gorunumu</span>
+    <span class="call-summary-chip">${tiles.length} panel acik</span>
+    <span class="call-summary-chip">${cameraOnCount} kamera aktif</span>
+    <span class="call-summary-chip">${audioOnCount} mikrofon aktif</span>
+    ${lastCallCapabilityMessage ? `<span class="call-summary-chip">${escapeHtml(lastCallCapabilityMessage)}</span>` : ''}
+  `;
 
   callOverlayMembers.innerHTML = tiles.map((tile) => `
     <div class="call-member-row">
@@ -923,20 +951,16 @@ function renderCallOverlay() {
     </div>
   `).join('');
 
-  callFilmstrip.querySelectorAll('[data-call-focus]').forEach((button) => {
-    button.onclick = () => {
-      focusedCallTileKey = button.dataset.callFocus;
+  callStage.querySelectorAll('[data-call-focus]').forEach((tile) => {
+    tile.onclick = () => {
+      focusedCallTileKey = tile.dataset.callFocus;
       renderCallOverlay();
     };
   });
 
-  if (stageVideoId && stageTile.stream) {
-    attachRenderedVideo(stageVideoId, stageTile.stream, stageTile.isSelf);
-  }
-
   tiles.forEach((tile) => {
     if (tile.hasVideo && tile.stream) {
-      attachRenderedVideo(`callStripVideo_${tile.key}`, tile.stream, tile.isSelf);
+      attachRenderedVideo(`callGalleryVideo_${tile.key}`, tile.stream, tile.isSelf);
     }
   });
 
@@ -1149,6 +1173,7 @@ async function ensureLocalMedia() {
   for (const attempt of attempts) {
     try {
       localStream = await navigator.mediaDevices.getUserMedia(attempt);
+      await tuneLocalMediaTracks(localStream);
       micEnabled = Boolean(localStream.getAudioTracks().length);
       cameraEnabled = Boolean(localStream.getVideoTracks().length);
       lastCallCapabilityMessage = attempt.label;
@@ -1191,6 +1216,7 @@ async function ensureVideoTrack() {
 
   localStream.addTrack(videoTrack);
   cameraEnabled = true;
+  tuneLocalMediaTracks(localStream).catch(() => {});
   bindStreamState(localStream, () => renderVideoPanel());
 
   for (const pc of peerConnections.values()) {
