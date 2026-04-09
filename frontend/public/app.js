@@ -224,10 +224,10 @@ function channelDisplayName(channel) {
 
 function formatPresenceLabel(status) {
   const labels = {
-    online: 'Cevrimici',
-    away: 'Uzakta',
-    busy: 'Rahatsiz etme',
-    offline: 'Cevrimdisi'
+    online: 'Aktif',
+    away: 'Uzak',
+    busy: 'Mesgul',
+    offline: 'Offline'
   };
   return labels[status] || status;
 }
