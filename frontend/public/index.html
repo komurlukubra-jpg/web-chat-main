@@ -2513,6 +2513,242 @@
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+
+    .dm-user,
+    .dm-user-head,
+    .dm-name-wrap,
+    .member-row-main,
+    .member-card-content {
+      min-width: 0;
+    }
+
+    .dm-name,
+    .dm-preview,
+    .member-name,
+    .member-role,
+    .last-seen {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    @media (max-width: 860px) {
+      body {
+        overflow-x: hidden;
+        padding-bottom: 82px;
+      }
+
+      .app-shell {
+        display: block !important;
+        width: 100%;
+        min-width: 0;
+        min-height: 100dvh;
+        height: auto;
+        overflow: visible;
+      }
+
+      .app-shell > [data-mobile-section] {
+        display: none !important;
+        width: 100%;
+        min-width: 0;
+        max-width: 100vw;
+      }
+
+      .app-shell[data-mobile-view="servers"] > [data-mobile-section="servers"],
+      .app-shell[data-mobile-view="channels"] > [data-mobile-section="channels"],
+      .app-shell[data-mobile-view="members"] > [data-mobile-section="members"] {
+        display: flex !important;
+        flex-direction: column;
+      }
+
+      .app-shell[data-mobile-view="chat"] > [data-mobile-section="chat"] {
+        display: grid !important;
+      }
+
+      .servers,
+      .channels,
+      .workspace,
+      .sidebar {
+        position: relative;
+        inset: auto;
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: 100vw !important;
+        min-height: calc(100dvh - 82px);
+        height: auto;
+        padding: 0;
+        border: 0;
+        transform: none !important;
+        opacity: 1;
+        pointer-events: auto;
+      }
+
+      .servers,
+      .channels,
+      .sidebar {
+        background: var(--panel-2);
+        overflow: auto;
+      }
+
+      .workspace {
+        background: var(--panel);
+        overflow: hidden;
+        grid-template-rows: auto auto minmax(0, 1fr) auto;
+      }
+
+      .workspace-header,
+      .chat-area,
+      .composer,
+      .pinned-bar {
+        width: 100%;
+        min-width: 0;
+      }
+
+      .workspace-title-group {
+        min-width: 0;
+        flex: 1 1 auto;
+      }
+
+      .workspace-title-group > div {
+        min-width: 0;
+      }
+
+      .workspace-header h2,
+      #helperText,
+      #currentLocation {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .chat-area {
+        padding: 6px 0 10px;
+        align-items: stretch;
+      }
+
+      .date-divider,
+      .message-row,
+      .chat-empty {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+      }
+
+      .message-row {
+        grid-template-columns: 36px minmax(0, 1fr);
+        padding: 8px 10px;
+        gap: 10px;
+      }
+
+      .message-content,
+      .message-body,
+      .reactions-row,
+      .attachment-card,
+      .attachment-preview-item {
+        width: 100%;
+        min-width: 0;
+        max-width: 100% !important;
+      }
+
+      .message-row.dm-thread .message-content {
+        width: auto;
+        max-width: min(88%, 420px) !important;
+      }
+
+      .composer {
+        padding: 10px 12px 12px;
+        position: sticky;
+        bottom: 0;
+        z-index: 2;
+        background: linear-gradient(180deg, rgba(49, 51, 56, 0.96), #313338 34%);
+      }
+
+      .composer-row {
+        grid-template-columns: 40px minmax(0, 1fr) auto;
+        gap: 8px;
+      }
+
+      .composer-row input,
+      #messageInput {
+        width: 100%;
+        min-width: 0;
+      }
+
+      .mobile-pane-header {
+        display: grid !important;
+        gap: 6px;
+        padding: 14px 16px 10px;
+      }
+
+      .mobile-workspace-btn {
+        display: grid !important;
+      }
+
+      .mobile-context-tag {
+        display: inline-flex !important;
+      }
+
+      .mobile-nav {
+        display: grid !important;
+        position: fixed;
+        left: 12px;
+        right: 12px;
+        bottom: calc(10px + env(safe-area-inset-bottom));
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+        padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+        background: rgba(30, 31, 34, 0.96);
+        border: 1px solid var(--line-soft);
+        border-radius: 20px;
+        z-index: 30;
+        backdrop-filter: blur(16px);
+      }
+
+      .server-stack {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 14px;
+        justify-items: center;
+        align-items: start;
+        width: 100%;
+        padding: 12px 12px 8px;
+      }
+
+      .member-tabs {
+        position: sticky;
+        top: 0;
+        z-index: 3;
+        padding: 0 12px 8px;
+        background: var(--panel-2);
+      }
+
+      .dm-row {
+        grid-template-columns: 1fr !important;
+      }
+
+      .dm-list,
+      .member-group-list {
+        width: 100%;
+        min-width: 0;
+      }
+
+      .nav-strip,
+      #presenceSelect,
+      #searchBtn,
+      #pinBtn,
+      .helper-line,
+      .pinned-bar,
+      #voiceShortcutCard,
+      #accountCard,
+      .channels .brand,
+      .channels .action-grid,
+      .member-profile-btn,
+      .dm-profile-btn {
+        display: none !important;
+      }
+    }
   </style>
 </head>
 <body>
