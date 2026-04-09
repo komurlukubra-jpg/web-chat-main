@@ -3,6 +3,7 @@ const fs = require('fs');
 const http = require('http');
 const os = require('os');
 const path = require('path');
+const { Pool } = require('pg');
 const WebSocket = require('ws');
 
 const app = express();
@@ -14,6 +15,8 @@ const STATE_FILE = path.join(DATA_DIR, 'state.json');
 const FRONTEND_DIR = path.join(__dirname, '..', 'frontend', 'public');
 const RESERVED_USERNAMES = new Set(['system', 'bot']);
 const ALLOWED_PRESENCE = new Set(['online', 'away', 'busy']);
+const DATABASE_URL = process.env.DATABASE_URL || '';
+const SNAPSHOT_ROW_ID = 'primary';
 
 app.use(express.json({ limit: '10mb' }));
 
@@ -53,6 +56,8 @@ function defaultState() {
       { username: 'moderator', password: '123', banned: false, mutedUntil: null, status: 'away' },
       { username: 'student', password: '123', banned: false, mutedUntil: null, status: 'online' }
     ],
+    auditLogs: [],
+    invites: [],
     directMessages: {},
     servers: [
       {
@@ -131,6 +136,8 @@ function normalizeState(loadedState) {
   const nextState = loadedState || {};
 
   nextState.users = Array.isArray(nextState.users) ? nextState.users : [];
+  nextState.auditLogs = Array.isArray(nextState.auditLogs) ? nextState.auditLogs : [];
+  nextState.invites = Array.isArray(nextState.invites) ? nextState.invites : [];
   nextState.servers = Array.isArray(nextState.servers) ? nextState.servers : [];
   nextState.messages = nextState.messages && typeof nextState.messages === 'object' ? nextState.messages : {};
   nextState.directMessages = nextState.directMessages && typeof nextState.directMessages === 'object' ? nextState.directMessages : {};
@@ -173,13 +180,110 @@ function normalizeState(loadedState) {
   return nextState;
 }
 
-let state = normalizeState(loadState());
+let state = normalizeState(defaultState());
 const callPresence = {};
 const onlineUsers = new Set();
 const typingState = {};
+let pgPool = null;
+let persistenceMode = 'file';
+let persistenceWriteChain = Promise.resolve();
+
+function cloneStateSnapshot(snapshot = state) {
+  return JSON.parse(JSON.stringify(snapshot));
+}
+
+function writeStateFile(snapshot = state) {
+  fs.writeFileSync(STATE_FILE, JSON.stringify(snapshot, null, 2));
+}
+
+function getDatabaseSslConfig() {
+  if (!DATABASE_URL || process.env.DB_SSL === 'false' || /localhost|127\.0\.0\.1/.test(DATABASE_URL)) {
+    return false;
+  }
+  return { rejectUnauthorized: false };
+}
+
+async function ensureDatabase() {
+  if (!DATABASE_URL || pgPool) {
+    return;
+  }
+
+  pgPool = new Pool({
+    connectionString: DATABASE_URL,
+    ssl: getDatabaseSslConfig()
+  });
+
+  await pgPool.query(`
+    CREATE TABLE IF NOT EXISTS app_state_snapshots (
+      id TEXT PRIMARY KEY,
+      state JSONB NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+}
+
+async function persistSnapshotToDatabase(snapshot) {
+  if (!pgPool) {
+    return;
+  }
+
+  await pgPool.query(
+    `
+      INSERT INTO app_state_snapshots (id, state, updated_at)
+      VALUES ($1, $2::jsonb, NOW())
+      ON CONFLICT (id)
+      DO UPDATE SET state = EXCLUDED.state, updated_at = NOW()
+    `,
+    [SNAPSHOT_ROW_ID, JSON.stringify(snapshot)]
+  );
+}
+
+async function initializePersistence() {
+  ensureDataDir();
+  state = normalizeState(loadState());
+
+  if (!DATABASE_URL) {
+    persistenceMode = 'file';
+    return;
+  }
+
+  try {
+    await ensureDatabase();
+    const result = await pgPool.query('SELECT state FROM app_state_snapshots WHERE id = $1', [SNAPSHOT_ROW_ID]);
+    if (result.rows[0]?.state) {
+      state = normalizeState(result.rows[0].state);
+    } else {
+      await persistSnapshotToDatabase(cloneStateSnapshot(state));
+    }
+    persistenceMode = 'postgres';
+    writeStateFile(state);
+    console.log('Persistence mode: postgres snapshot');
+  } catch (error) {
+    persistenceMode = 'file';
+    console.error(`Postgres persistence unavailable, falling back to JSON file: ${error.message}`);
+    if (pgPool) {
+      try {
+        await pgPool.end();
+      } catch {
+        // Ignore shutdown failures during fallback.
+      }
+      pgPool = null;
+    }
+  }
+}
 
 function saveState() {
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+  const snapshot = cloneStateSnapshot(state);
+  writeStateFile(snapshot);
+
+  if (pgPool) {
+    persistenceWriteChain = persistenceWriteChain
+      .catch(() => {})
+      .then(() => persistSnapshotToDatabase(snapshot))
+      .catch((error) => {
+        console.error(`Postgres snapshot save failed: ${error.message}`);
+      });
+  }
 }
 
 function sanitizeUser(user) {
@@ -391,6 +495,122 @@ function canAccessChannel(server, username, channelId) {
   return channelInfo.channel.allowedRoles.includes(member.role);
 }
 
+function getChannel(server, channelId) {
+  return getChannelById(server, channelId)?.channel || null;
+}
+
+function canManageServer(server, username) {
+  const member = getServerMember(server, username);
+  return Boolean(member && ['admin', 'mod'].includes(member.role));
+}
+
+function normalizeLimit(value, fallback = 25, max = 100) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return Math.min(parsed, max);
+}
+
+function pushAuditLog(entry) {
+  state.auditLogs.unshift(entry);
+  if (state.auditLogs.length > 500) {
+    state.auditLogs.length = 500;
+  }
+  return entry;
+}
+
+function logAuditEvent({
+  serverId = null,
+  actor = 'system',
+  action,
+  targetType = 'server',
+  targetId = null,
+  summary,
+  metadata = {}
+}) {
+  return pushAuditLog({
+    id: uid('audit'),
+    serverId,
+    actor,
+    action,
+    targetType,
+    targetId,
+    summary,
+    metadata,
+    time: now()
+  });
+}
+
+function generateInviteCode() {
+  let code = '';
+  do {
+    code = Math.random().toString(36).slice(2, 8).toLowerCase();
+  } while (state.invites.some((invite) => invite.code === code));
+  return code;
+}
+
+function isInviteActive(invite) {
+  if (!invite || invite.revokedAt) {
+    return false;
+  }
+  if (invite.expiresAt && invite.expiresAt <= now()) {
+    return false;
+  }
+  if (Number.isFinite(invite.maxUses) && invite.maxUses > 0 && invite.uses >= invite.maxUses) {
+    return false;
+  }
+  return true;
+}
+
+function getInviteByCode(code) {
+  return state.invites.find((invite) => invite.code === String(code || '').trim().toLowerCase()) || null;
+}
+
+function serializeInvite(invite, server = getServer(invite.serverId)) {
+  const channel = server ? getChannel(server, invite.channelId) : null;
+  return {
+    code: invite.code,
+    serverId: invite.serverId,
+    serverName: server?.name || 'Unknown server',
+    channelId: invite.channelId,
+    channelName: channel?.name || null,
+    createdBy: invite.createdBy,
+    uses: invite.uses || 0,
+    maxUses: Number.isFinite(invite.maxUses) ? invite.maxUses : null,
+    expiresAt: invite.expiresAt || null,
+    revokedAt: invite.revokedAt || null,
+    active: isInviteActive(invite),
+    createdAt: invite.createdAt || invite.time || null
+  };
+}
+
+function serializeAuditLog(entry) {
+  return {
+    id: entry.id,
+    serverId: entry.serverId,
+    actor: entry.actor,
+    action: entry.action,
+    targetType: entry.targetType,
+    targetId: entry.targetId,
+    summary: entry.summary,
+    metadata: entry.metadata || {},
+    time: entry.time
+  };
+}
+
+function getServerInvites(serverId) {
+  return state.invites
+    .filter((invite) => invite.serverId === serverId)
+    .sort((a, b) => (b.createdAt || b.time || 0) - (a.createdAt || a.time || 0));
+}
+
+function getServerAuditLogs(serverId) {
+  return state.auditLogs
+    .filter((entry) => entry.serverId === serverId)
+    .sort((a, b) => (b.time || 0) - (a.time || 0));
+}
+
 function serializeServer(server, username) {
   const member = getServerMember(server, username);
   const visibleCategories = server.categories
@@ -420,7 +640,13 @@ function serializeServer(server, username) {
     })),
     categories: visibleCategories,
     reports: server.reports,
-    polls: server.polls
+    polls: server.polls,
+    invites: canManageServer(server, username)
+      ? getServerInvites(server.id).map((invite) => serializeInvite(invite, server))
+      : [],
+    auditLogs: canManageServer(server, username)
+      ? getServerAuditLogs(server.id).slice(0, 50).map(serializeAuditLog)
+      : []
   };
 }
 
@@ -444,6 +670,9 @@ function buildBootstrap(username) {
   const user = getUser(username);
   const canonicalUsername = user?.username || username;
   return {
+    meta: {
+      persistence: persistenceMode
+    },
     currentUser: sanitizeUser(getUser(canonicalUsername)),
     users: state.users.map(sanitizeUser),
     servers: state.servers
@@ -690,7 +919,185 @@ app.get('/healthz', (req, res) => {
     ok: true,
     timestamp: now(),
     users: state.users.length,
-    servers: state.servers.length
+    servers: state.servers.length,
+    persistence: persistenceMode
+  });
+});
+
+app.get('/api/audit', (req, res) => {
+  const { serverId, username } = req.query;
+  const serverItem = getServer(serverId);
+  if (!serverItem) {
+    return res.status(404).json({ error: 'Server not found.' });
+  }
+  if (!canManageServer(serverItem, username)) {
+    return res.status(403).json({ error: 'Yetki yok.' });
+  }
+  res.json({
+    auditLogs: getServerAuditLogs(serverId)
+      .slice(0, normalizeLimit(req.query.limit, 30))
+      .map(serializeAuditLog)
+  });
+});
+
+app.get('/api/invites', (req, res) => {
+  const { serverId, username } = req.query;
+  const serverItem = getServer(serverId);
+  if (!serverItem) {
+    return res.status(404).json({ error: 'Server not found.' });
+  }
+  if (!canManageServer(serverItem, username)) {
+    return res.status(403).json({ error: 'Yetki yok.' });
+  }
+  res.json({
+    invites: getServerInvites(serverId)
+      .slice(0, normalizeLimit(req.query.limit, 20))
+      .map((invite) => serializeInvite(invite, serverItem))
+  });
+});
+
+app.get('/api/invite/:code', (req, res) => {
+  const invite = getInviteByCode(req.params.code);
+  if (!invite || !isInviteActive(invite)) {
+    return res.status(404).json({ error: 'Invite not found or expired.' });
+  }
+  const serverItem = getServer(invite.serverId);
+  if (!serverItem) {
+    return res.status(404).json({ error: 'Server not found.' });
+  }
+  res.json({
+    invite: serializeInvite(invite, serverItem),
+    server: {
+      id: serverItem.id,
+      name: serverItem.name,
+      memberCount: serverItem.members.length
+    }
+  });
+});
+
+app.post('/api/invite', (req, res) => {
+  const { serverId, actor, channelId, maxUses, expiresInHours } = req.body;
+  const serverItem = getServer(serverId);
+  if (!serverItem) {
+    return res.status(404).json({ error: 'Server not found.' });
+  }
+  if (!canManageServer(serverItem, actor)) {
+    return res.status(403).json({ error: 'Yetki yok.' });
+  }
+
+  const channel = getChannel(serverItem, channelId) || serverItem.categories[0]?.channels[0];
+  if (!channel) {
+    return res.status(400).json({ error: 'Invite channel not found.' });
+  }
+
+  const invite = {
+    id: uid('inv'),
+    code: generateInviteCode(),
+    serverId: serverItem.id,
+    channelId: channel.id,
+    createdBy: actor,
+    createdAt: now(),
+    expiresAt: Number(expiresInHours) > 0 ? now() + (Number(expiresInHours) * 60 * 60 * 1000) : null,
+    maxUses: Number(maxUses) > 0 ? Number(maxUses) : null,
+    uses: 0,
+    revokedAt: null
+  };
+
+  state.invites.unshift(invite);
+  logAuditEvent({
+    serverId,
+    actor,
+    action: 'invite.created',
+    targetType: 'invite',
+    targetId: invite.code,
+    summary: `${actor} yeni bir davet linki olusturdu.`,
+    metadata: {
+      channelId: channel.id,
+      maxUses: invite.maxUses,
+      expiresAt: invite.expiresAt
+    }
+  });
+  saveState();
+  broadcastServer(serverId);
+  res.json({
+    invite: serializeInvite(invite, serverItem),
+    server: serializeServer(serverItem, actor)
+  });
+});
+
+app.post('/api/invite/redeem', (req, res) => {
+  const { code, username } = req.body;
+  const user = getUser(username);
+  const invite = getInviteByCode(code);
+
+  if (!user) {
+    return res.status(404).json({ error: 'User not found.' });
+  }
+  if (!invite || !isInviteActive(invite)) {
+    return res.status(404).json({ error: 'Invite not found or expired.' });
+  }
+
+  const serverItem = getServer(invite.serverId);
+  if (!serverItem) {
+    return res.status(404).json({ error: 'Server not found.' });
+  }
+
+  if (!getServerMember(serverItem, user.username)) {
+    serverItem.members.push({ username: user.username, role: 'member' });
+  }
+
+  invite.uses += 1;
+  const presence = ensurePresenceEntry(user.username);
+  presence.currentServerId = serverItem.id;
+  presence.currentChannelId = invite.channelId || serverItem.categories[0]?.channels[0]?.id || null;
+
+  logAuditEvent({
+    serverId: serverItem.id,
+    actor: user.username,
+    action: 'invite.redeemed',
+    targetType: 'invite',
+    targetId: invite.code,
+    summary: `${user.username} davet linki ile sunucuya katildi.`,
+    metadata: { channelId: invite.channelId }
+  });
+  saveState();
+  broadcastServer(serverItem.id);
+  broadcastState();
+  res.json({
+    success: true,
+    server: serializeServer(serverItem, user.username),
+    channelId: presence.currentChannelId
+  });
+});
+
+app.post('/api/invite/revoke', (req, res) => {
+  const { code, actor } = req.body;
+  const invite = getInviteByCode(code);
+  if (!invite) {
+    return res.status(404).json({ error: 'Invite not found.' });
+  }
+  const serverItem = getServer(invite.serverId);
+  if (!serverItem) {
+    return res.status(404).json({ error: 'Server not found.' });
+  }
+  if (!canManageServer(serverItem, actor)) {
+    return res.status(403).json({ error: 'Yetki yok.' });
+  }
+
+  invite.revokedAt = now();
+  logAuditEvent({
+    serverId: serverItem.id,
+    actor,
+    action: 'invite.revoked',
+    targetType: 'invite',
+    targetId: invite.code,
+    summary: `${actor} ${invite.code} davet linkini iptal etti.`
+  });
+  saveState();
+  broadcastServer(serverItem.id);
+  res.json({
+    success: true,
+    server: serializeServer(serverItem, actor)
   });
 });
 
@@ -737,6 +1144,16 @@ app.post('/api/register', (req, res) => {
     lastSeenAt: null
   };
   ensureMemberships(username);
+  state.servers.forEach((serverItem) => {
+    logAuditEvent({
+      serverId: serverItem.id,
+      actor: username,
+      action: 'member.registered',
+      targetType: 'user',
+      targetId: username,
+      summary: `${username} sunucuya kaydoldu.`
+    });
+  });
   saveState();
   broadcastState();
   state.servers.forEach((serverItem) => broadcastServer(serverItem.id));
@@ -758,6 +1175,18 @@ app.post('/api/login', (req, res) => {
 
   const presence = ensurePresenceEntry(user.username);
   presence.lastSeenAt = null;
+  state.servers
+    .filter((serverItem) => getServerMember(serverItem, user.username))
+    .forEach((serverItem) => {
+      logAuditEvent({
+        serverId: serverItem.id,
+        actor: user.username,
+        action: 'member.login',
+        targetType: 'user',
+        targetId: user.username,
+        summary: `${user.username} giris yapti.`
+      });
+    });
   saveState();
   broadcastState();
   res.json({ success: true, username: user.username });
@@ -800,6 +1229,14 @@ app.post('/api/server', (req, res) => {
   state.presence[creator] = state.presence[creator] || {};
   state.presence[creator].currentServerId = serverItem.id;
   state.presence[creator].currentChannelId = generalChannel.id;
+  logAuditEvent({
+    serverId: serverItem.id,
+    actor: creator,
+    action: 'server.created',
+    targetType: 'server',
+    targetId: serverItem.id,
+    summary: `${creator} ${serverItem.name} sunucusunu olusturdu.`
+  });
   saveState();
   broadcastServer(serverItem.id);
   res.json({ server: serializeServer(serverItem, creator) });
@@ -835,6 +1272,15 @@ app.post('/api/channel', (req, res) => {
   } else {
     state.messages[channel.id] = [];
   }
+  logAuditEvent({
+    serverId,
+    actor,
+    action: 'channel.created',
+    targetType: 'channel',
+    targetId: channel.id,
+    summary: `${actor} ${channel.name} kanalini olusturdu.`,
+    metadata: { kind: channel.kind, categoryId }
+  });
   saveState();
   broadcastServer(serverId);
   res.json({ channel });
@@ -864,6 +1310,14 @@ app.post('/api/category', (req, res) => {
   };
 
   serverItem.categories.push(category);
+  logAuditEvent({
+    serverId,
+    actor,
+    action: 'category.created',
+    targetType: 'category',
+    targetId: category.id,
+    summary: `${actor} ${category.name} kategorisini olusturdu.`
+  });
   saveState();
   broadcastServer(serverId);
   res.json({ category });
@@ -891,6 +1345,15 @@ app.post('/api/role', (req, res) => {
   }
 
   targetMember.role = role;
+  logAuditEvent({
+    serverId,
+    actor,
+    action: 'role.changed',
+    targetType: 'member',
+    targetId: targetUser,
+    summary: `${actor} ${targetUser} kullanicisinin rolunu ${role} yapti.`,
+    metadata: { role }
+  });
   saveState();
   broadcastServer(serverId);
   res.json({ success: true });
@@ -928,6 +1391,15 @@ app.post('/api/moderation', (req, res) => {
   if (modOnlyChannel) {
     postSystemMessage(modOnlyChannel.id, reportLine);
   }
+  logAuditEvent({
+    serverId,
+    actor,
+    action: `moderation.${action}`,
+    targetType: 'member',
+    targetId: targetUser,
+    summary: reportLine,
+    metadata: { reason: reason || null }
+  });
   saveState();
   broadcastState();
   broadcastServer(serverId);
@@ -949,6 +1421,15 @@ app.post('/api/report', (req, res) => {
     reason,
     status: 'open',
     time: now()
+  });
+  logAuditEvent({
+    serverId,
+    actor: reporter,
+    action: 'report.created',
+    targetType: 'member',
+    targetId: targetUser,
+    summary: `${reporter} ${targetUser} icin rapor olusturdu.`,
+    metadata: { channelId, reason }
   });
   saveState();
   broadcastServer(serverId);
@@ -1000,6 +1481,18 @@ app.post('/api/avatar', (req, res) => {
   }
 
   user.avatar = avatar || null;
+  state.servers
+    .filter((serverItem) => getServerMember(serverItem, user.username))
+    .forEach((serverItem) => {
+      logAuditEvent({
+        serverId: serverItem.id,
+        actor: user.username,
+        action: 'profile.avatar.updated',
+        targetType: 'user',
+        targetId: user.username,
+        summary: `${user.username} profil fotografini guncelledi.`
+      });
+    });
   saveState();
   broadcastState();
   state.servers.forEach((serverItem) => broadcastServer(serverItem.id));
@@ -1480,10 +1973,20 @@ app.use((req, res, next) => {
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
 
-server.listen(PORT, HOST, () => {
-  const localIp = getLocalIpAddress();
-  console.log(`Server running at http://localhost:${PORT}`);
-  if (localIp) {
-    console.log(`LAN access: http://${localIp}:${PORT}`);
-  }
+async function startServer() {
+  await initializePersistence();
+
+  server.listen(PORT, HOST, () => {
+    const localIp = getLocalIpAddress();
+    console.log(`Server running at http://localhost:${PORT}`);
+    console.log(`Persistence mode: ${persistenceMode}`);
+    if (localIp) {
+      console.log(`LAN access: http://${localIp}:${PORT}`);
+    }
+  });
+}
+
+startServer().catch((error) => {
+  console.error(`Startup failed: ${error.message}`);
+  process.exit(1);
 });

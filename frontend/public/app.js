@@ -10,12 +10,18 @@ const API = {
   moderation: '/api/moderation',
   report: '/api/report',
   presence: '/api/presence',
-  avatar: '/api/avatar'
+  avatar: '/api/avatar',
+  audit: '/api/audit',
+  invites: '/api/invites',
+  createInvite: '/api/invite',
+  redeemInvite: '/api/invite/redeem',
+  revokeInvite: '/api/invite/revoke'
 };
 
 let ws = null;
 let currentUser = null;
 let appState = {
+  meta: { persistence: 'file' },
   servers: [],
   messages: {},
   directMessages: {},
@@ -3237,6 +3243,258 @@ function renderCallOverlay() {
   callOverlay.classList.toggle('hidden', !callOverlayOpen);
   callOverlay.setAttribute('aria-hidden', String(!callOverlayOpen));
   document.body.classList.toggle('call-open', callOverlayOpen);
+}
+
+function upsertServerState(serverData) {
+  if (!serverData?.id) {
+    return;
+  }
+  const index = appState.servers.findIndex((server) => server.id === serverData.id);
+  if (index >= 0) {
+    appState.servers[index] = serverData;
+  } else {
+    appState.servers.push(serverData);
+  }
+}
+
+function formatDateTime(timestamp) {
+  if (!timestamp) {
+    return '-';
+  }
+  return new Date(timestamp).toLocaleString('tr-TR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
+function inviteStatusLabel(invite) {
+  if (!invite) {
+    return 'Bilinmiyor';
+  }
+  if (invite.revokedAt) {
+    return 'Iptal';
+  }
+  if (invite.expiresAt && invite.expiresAt <= Date.now()) {
+    return 'Suresi doldu';
+  }
+  if (invite.maxUses && invite.uses >= invite.maxUses) {
+    return 'Kullanim bitti';
+  }
+  return 'Aktif';
+}
+
+function renderInviteCards(server) {
+  const invites = server?.invites || [];
+  if (!invites.length) {
+    return '<div class="empty-state">Henuz davet linki yok.</div>';
+  }
+
+  return invites
+    .map((invite) => `
+      <div class="report-card">
+        <div><strong>${escapeHtml(invite.serverName || server.name)}</strong></div>
+        <div class="report-meta">Kod: ${escapeHtml(invite.code)} | Kanal: ${escapeHtml(invite.channelName || '-')}</div>
+        <div class="report-meta">Durum: ${escapeHtml(inviteStatusLabel(invite))} | Kullanim: ${invite.uses}${invite.maxUses ? ` / ${invite.maxUses}` : ''}</div>
+        <div class="report-meta">Olusturan: ${escapeHtml(invite.createdBy)} | Son: ${escapeHtml(invite.expiresAt ? formatDateTime(invite.expiresAt) : 'Suresiz')}</div>
+        ${invite.active ? `<button class="modal-btn secondary" data-revoke-invite="${escapeHtml(invite.code)}">Davet Linkini Iptal Et</button>` : ''}
+      </div>
+    `)
+    .join('');
+}
+
+function renderAuditCards(server) {
+  const auditLogs = server?.auditLogs || [];
+  if (!auditLogs.length) {
+    return '<div class="empty-state">Henuz audit kaydi yok.</div>';
+  }
+
+  return auditLogs
+    .slice(0, 18)
+    .map((entry) => `
+      <div class="report-card">
+        <div><strong>${escapeHtml(entry.action)}</strong></div>
+        <div>${escapeHtml(entry.summary || '-')}</div>
+        <div class="report-meta">${escapeHtml(entry.actor || 'system')} | ${escapeHtml(formatDateTime(entry.time))}</div>
+      </div>
+    `)
+    .join('');
+}
+
+async function showCreateInviteModal() {
+  const server = getCurrentServer();
+  if (!server) {
+    return;
+  }
+
+  const visibleChannels = server.categories.flatMap((category) => category.channels);
+  showModal(`
+    <h2>Davet Linki Olustur</h2>
+    <select id="inviteChannel" class="modal-input">
+      ${visibleChannels.map((channel) => `<option value="${channel.id}">${escapeHtml(channel.name)} (${channel.kind})</option>`).join('')}
+    </select>
+    <input id="inviteMaxUses" class="modal-input" type="number" min="0" placeholder="Maksimum kullanim (0 = limitsiz)" />
+    <input id="inviteExpiresHours" class="modal-input" type="number" min="0" placeholder="Kac saat gecerli olsun? (0 = suresiz)" />
+    <button id="createInviteSubmit" class="modal-btn primary">Olustur</button>
+    <button id="createInviteCancel" class="modal-btn secondary">Geri Don</button>
+  `);
+
+  document.getElementById('createInviteSubmit').onclick = async () => {
+    try {
+      const result = await request(API.createInvite, {
+        method: 'POST',
+        body: JSON.stringify({
+          serverId: server.id,
+          actor: currentUser,
+          channelId: document.getElementById('inviteChannel').value,
+          maxUses: Number(document.getElementById('inviteMaxUses').value || 0),
+          expiresInHours: Number(document.getElementById('inviteExpiresHours').value || 0)
+        })
+      });
+      upsertServerState(result.server);
+      showToast(`Davet kodu: ${result.invite.code}`);
+      await showUtilityHub();
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+
+  document.getElementById('createInviteCancel').onclick = showUtilityHub;
+}
+
+async function revokeInvite(code) {
+  try {
+    const result = await request(API.revokeInvite, {
+      method: 'POST',
+      body: JSON.stringify({ code, actor: currentUser })
+    });
+    upsertServerState(result.server);
+    await showUtilityHub();
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+function showRedeemInviteModal() {
+  showModal(`
+    <h2>Davet Kodu Gir</h2>
+    <input id="redeemInviteCode" class="modal-input" placeholder="Ornek: ab12cd" />
+    <button id="redeemInviteSubmit" class="modal-btn primary">Sunucuya Katil</button>
+    <button id="redeemInviteCancel" class="modal-btn secondary">Kapat</button>
+  `);
+
+  document.getElementById('redeemInviteSubmit').onclick = async () => {
+    try {
+      const code = document.getElementById('redeemInviteCode').value.trim();
+      const result = await request(API.redeemInvite, {
+        method: 'POST',
+        body: JSON.stringify({ code, username: currentUser })
+      });
+      upsertServerState(result.server);
+      currentServerId = result.server.id;
+      currentChannelId = result.channelId || getFirstTextChannel(result.server)?.id || result.server.categories?.[0]?.channels?.[0]?.id || null;
+      activeConversationType = 'channel';
+      activeDmUser = null;
+      hideModal();
+      renderAll();
+      showToast('Davet ile sunucuya katildin.');
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+
+  document.getElementById('redeemInviteCancel').onclick = hideModal;
+}
+
+async function showUtilityHub() {
+  const server = getCurrentServer();
+  if (!server) {
+    return;
+  }
+
+  const canManage = ['admin', 'mod'].includes(myRole());
+  if (canManage) {
+    try {
+      const [auditData, inviteData] = await Promise.all([
+        request(`${API.audit}?serverId=${encodeURIComponent(server.id)}&username=${encodeURIComponent(currentUser)}&limit=18`),
+        request(`${API.invites}?serverId=${encodeURIComponent(server.id)}&username=${encodeURIComponent(currentUser)}&limit=12`)
+      ]);
+      server.auditLogs = auditData.auditLogs || [];
+      server.invites = inviteData.invites || [];
+    } catch {
+      // Keep last known data if utility refresh fails.
+    }
+  }
+
+  renderReports();
+  renderPolls();
+  renderPermissions();
+  showModal(`
+    <h2>Sunucu Araclari</h2>
+    <div class="report-card"><strong>Kalicilik</strong><div class="report-meta">Mod: ${escapeHtml(appState.meta?.persistence || 'file')}</div></div>
+    <div class="report-card"><strong>Raporlar</strong></div>
+    ${reportList.innerHTML}
+    <div class="report-card"><strong>Anketler</strong></div>
+    ${pollList.innerHTML}
+    <div class="report-card"><strong>Izin Matrisi</strong></div>
+    ${permissionsList.innerHTML}
+    <div class="report-card"><strong>Davet Linkleri</strong></div>
+    ${canManage ? renderInviteCards(server) : '<div class="empty-state">Davet linklerini yonetmek icin admin/mod olmalisin.</div>'}
+    <div class="report-card"><strong>Audit Log</strong></div>
+    ${canManage ? renderAuditCards(server) : '<div class="empty-state">Audit log sadece yonetici rolleri icin gorunur.</div>'}
+    <button id="utilityRedeemInviteBtn" class="modal-btn secondary">Davet Kodu Gir</button>
+    ${canManage ? '<button id="utilityCreateInviteBtn" class="modal-btn primary">Davet Linki Olustur</button>' : ''}
+    ${canManage ? '<button id="utilityRoleBtn" class="modal-btn secondary">Rol Yonetimi</button>' : ''}
+    ${canManage ? '<button id="utilityModBtn" class="modal-btn secondary">Moderasyon</button>' : ''}
+  `);
+
+  document.getElementById('utilityRedeemInviteBtn').onclick = showRedeemInviteModal;
+
+  if (canManage) {
+    document.getElementById('utilityCreateInviteBtn').onclick = showCreateInviteModal;
+    document.getElementById('utilityRoleBtn').onclick = () => {
+      hideModal();
+      assignRole();
+    };
+    document.getElementById('utilityModBtn').onclick = () => {
+      hideModal();
+      moderateUser();
+    };
+    modal.querySelectorAll('[data-revoke-invite]').forEach((button) => {
+      button.onclick = () => revokeInvite(button.dataset.revokeInvite);
+    });
+  }
+}
+
+function openQuickActions() {
+  showModal(`
+    <h2>Hizli Islemler</h2>
+    <button id="quickAttach" class="modal-btn primary">Dosya / Gorsel Ekle</button>
+    <button id="quickRedeemInvite" class="modal-btn secondary">Davet Kodu Gir</button>
+    <button id="quickCreateChannel" class="modal-btn secondary">Kanal Ekle</button>
+    <button id="quickCreateCategory" class="modal-btn secondary">Kategori Ekle</button>
+    <button id="quickReport" class="modal-btn secondary">Rapor Olustur</button>
+  `);
+
+  document.getElementById('quickAttach').onclick = () => {
+    hideModal();
+    attachmentInput?.click();
+  };
+  document.getElementById('quickRedeemInvite').onclick = showRedeemInviteModal;
+  document.getElementById('quickCreateChannel').onclick = () => {
+    hideModal();
+    createChannel();
+  };
+  document.getElementById('quickCreateCategory').onclick = () => {
+    hideModal();
+    createCategory();
+  };
+  document.getElementById('quickReport').onclick = () => {
+    hideModal();
+    reportUser();
+  };
 }
 
 window.onload = () => {
