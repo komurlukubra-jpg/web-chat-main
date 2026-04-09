@@ -864,6 +864,9 @@
     .member-name {
       font-weight: 700;
       font-size: 14px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .member-role,
@@ -871,6 +874,9 @@
       color: var(--muted);
       font-size: 12px;
       margin-top: 4px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .member-group-title {
@@ -1131,6 +1137,10 @@
         margin-left: auto;
       }
 
+      #presenceSelect {
+        display: none;
+      }
+
       .top-actions {
         gap: 6px;
         flex-wrap: nowrap;
@@ -1148,6 +1158,10 @@
 
       .chat-area {
         padding: 6px 0 10px;
+      }
+
+      .helper-line {
+        display: none;
       }
 
       .message-row {
@@ -1254,6 +1268,23 @@
         padding-right: 14px;
       }
 
+      #accountCard {
+        display: none;
+      }
+
+      #serverSummaryCard {
+        border-bottom: 1px solid var(--line);
+      }
+
+      .action-grid {
+        margin-top: 2px;
+      }
+
+      .action-btn {
+        min-height: 42px;
+        border-radius: 12px;
+      }
+
       .sidebar .utility-panel {
         display: none;
       }
@@ -1268,6 +1299,15 @@
       .sidebar-panel-main {
         border-bottom: 0;
         flex: 1 1 auto;
+      }
+
+      .member-profile-btn,
+      .dm-profile-btn {
+        display: none;
+      }
+
+      .dm-row {
+        grid-template-columns: 1fr;
       }
 
       .call-overlay {
@@ -2311,6 +2351,10 @@
       max-width: 100%;
     }
 
+    .dm-row .mini-action-btn {
+      flex-shrink: 0;
+    }
+
     .badge-dot {
       min-width: 20px;
       height: 20px;
@@ -2473,7 +2517,7 @@
         <p>Discord benzeri topluluk alani</p>
       </section>
 
-      <section class="server-info-card">
+      <section id="serverSummaryCard" class="server-info-card">
         <div class="channel-section">Sunucu Bilgisi</div>
         <h3 style="margin-bottom:8px;" id="serverInfoName">Web Chat Server</h3>
         <div class="panel-subtitle">Kanallar, DM, voice room ve moderasyon</div>
@@ -2488,7 +2532,7 @@
 
       <section id="channelTree"></section>
 
-      <section class="server-info-card">
+      <section id="voiceShortcutCard" class="server-info-card">
         <div class="channel-section">Ses Odasi</div>
         <div id="voicePanel"></div>
         <div class="voice-actions">
@@ -2497,7 +2541,7 @@
         </div>
       </section>
 
-      <section class="server-info-card">
+      <section id="accountCard" class="server-info-card">
         <div style="display:grid; gap:6px;">
           <div id="userBadge" class="badge">guest</div>
           <div class="panel-subtitle">Sunucudaki rolun ve durumun burada gorunur.</div>
@@ -2616,20 +2660,20 @@
 
   <nav id="mobileNav" class="mobile-nav" aria-label="Mobil Sekmeler">
     <button class="mobile-nav-btn" data-mobile-target="servers">
-      <span class="mobile-nav-icon">Sun</span>
-      <span>Sunucular</span>
+      <span class="mobile-nav-icon">&#127968;</span>
+      <span>Ana</span>
     </button>
     <button class="mobile-nav-btn" data-mobile-target="channels">
       <span class="mobile-nav-icon">#</span>
       <span>Kanallar</span>
     </button>
     <button class="mobile-nav-btn active" data-mobile-target="chat">
-      <span class="mobile-nav-icon">DM</span>
+      <span class="mobile-nav-icon">&#128172;</span>
       <span>Sohbet</span>
     </button>
     <button class="mobile-nav-btn" data-mobile-target="members">
-      <span class="mobile-nav-icon">Uye</span>
-      <span>Uyeler</span>
+      <span class="mobile-nav-icon">&#128101;</span>
+      <span>Kisiler</span>
     </button>
   </nav>
 

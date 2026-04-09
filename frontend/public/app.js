@@ -3243,6 +3243,9 @@ window.onload = () => {
   pinBtn.innerHTML = '&#128204;';
   videoBtn.innerHTML = '&#127909;';
   membersToggleBtn.innerHTML = '&#128101;';
+  navChatBtn.innerHTML = '&#128172;';
+  navGameBtn.innerHTML = '&#127918;';
+  navAppsBtn.innerHTML = '&#129513;';
   document.querySelector('.pinned-icon').innerHTML = '&#128204;';
 
   sendBtn.onclick = sendMessage;
