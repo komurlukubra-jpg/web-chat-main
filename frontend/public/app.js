@@ -155,6 +155,7 @@ function renderMobileLayout() {
     sidebar.classList.remove('hidden-panel');
   }
   setMobileView(isMobileView() ? mobileView : 'chat');
+  mobileWorkspaceBtn.innerHTML = isMobileView() && mobileView !== 'chat' ? '&#10005;' : '&#9776;';
 }
 
 function applyTheme(theme) {
@@ -211,6 +212,24 @@ function getFirstTextChannel(server = getCurrentServer()) {
 
 function getFirstVoiceChannel(server = getCurrentServer()) {
   return getServerChannels(server).find((channel) => channel.kind === 'voice') || null;
+}
+
+function channelPrefix(channel) {
+  return channel?.kind === 'voice' ? 'Voice' : '#';
+}
+
+function channelDisplayName(channel) {
+  return channel ? `${channelPrefix(channel)} ${channel.name}` : 'Kanal';
+}
+
+function formatPresenceLabel(status) {
+  const labels = {
+    online: 'Cevrimici',
+    away: 'Uzakta',
+    busy: 'Rahatsiz etme',
+    offline: 'Cevrimdisi'
+  };
+  return labels[status] || status;
 }
 
 function getLastDmMessage(username) {
@@ -716,17 +735,6 @@ function getCallTiles() {
   const tiles = [];
   const includeSelf = Boolean(localStream || activeCallChannelId || callMembers.includes(currentUser));
 
-  if (includeSelf) {
-    tiles.push({
-      key: 'self',
-      username: currentUser,
-      isSelf: true,
-      stream: localStream,
-      hasVideo: streamHasVideo(localStream, true),
-      hasAudio: streamHasAudio(localStream, true)
-    });
-  }
-
   callMembers
     .filter((username) => normalizeUsernameKey(username) !== normalizeUsernameKey(currentUser))
     .forEach((username) => {
@@ -752,6 +760,17 @@ function getCallTiles() {
         hasAudio: streamHasAudio(stream)
       });
     }
+  }
+
+  if (includeSelf) {
+    tiles.push({
+      key: 'self',
+      username: currentUser,
+      isSelf: true,
+      stream: localStream,
+      hasVideo: streamHasVideo(localStream, true),
+      hasAudio: streamHasAudio(localStream, true)
+    });
   }
 
   return tiles;
@@ -2804,7 +2823,11 @@ function openQuickActions() {
 
 function toggleMembersPanel() {
   if (isMobileView()) {
-    setMobileView('members');
+    if (isDmConversation()) {
+      activeSidebarTab = 'dm';
+      renderSidebarTab();
+    }
+    setMobileView(mobileView === 'members' ? 'chat' : 'members');
     return;
   }
   sidebar.classList.toggle('hidden-panel');
@@ -2842,6 +2865,368 @@ function handleNavAction(section) {
   }
 }
 
+function applyTheme(theme) {
+  currentTheme = theme;
+  document.body.classList.toggle('light-mode', theme === 'light');
+  themeToggleBtn.innerHTML = theme === 'light' ? '&#9728;' : '&#127769;';
+  localStorage.setItem('community-theme', theme);
+}
+
+function renderMobileLayout() {
+  if (isMobileView()) {
+    sidebar.classList.remove('hidden-panel');
+  }
+  setMobileView(isMobileView() ? mobileView : 'chat');
+  mobileWorkspaceBtn.innerHTML = isMobileView() && mobileView !== 'chat' ? '&#10005;' : '&#9776;';
+}
+
+function renderChannels() {
+  const server = getCurrentServer();
+  channelTree.innerHTML = '';
+
+  if (!server) {
+    return;
+  }
+
+  server.categories.forEach((category) => {
+    const group = document.createElement('div');
+    group.className = 'channel-group';
+
+    const title = document.createElement('div');
+    title.className = 'channel-group-title';
+    title.textContent = category.name;
+    group.appendChild(title);
+
+    category.channels.forEach((channel) => {
+      const item = document.createElement('button');
+      item.className = `channel-item ${channel.id === currentChannelId ? 'active' : ''}`;
+      item.innerHTML = `<span class="channel-prefix">${channelPrefix(channel)}</span><span>${escapeHtml(channel.name)}</span>`;
+      item.onclick = () => switchChannel(channel.id);
+      group.appendChild(item);
+    });
+
+    channelTree.appendChild(group);
+  });
+}
+
+function renderHeader() {
+  const server = getCurrentServer();
+  const channel = getCurrentChannel();
+  if (!server || !channel) {
+    return;
+  }
+
+  currentLocation.textContent = isDmConversation()
+    ? `DM / ${activeDmUser}`
+    : channelDisplayName(channel);
+  const me = server.members.find((member) => member.username === currentUser);
+  userBadge.textContent = `${currentUser} (${me?.role || 'member'})`;
+  serverInfoName.textContent = server.name;
+  mobileContextTag.textContent = isDmConversation() ? `${server.name} • DM` : server.name;
+  mobileChannelsSummary.textContent = `${server.name} icindeki kanallar ve odalar`;
+  mobileContextTag.textContent = isDmConversation() ? `${server.name} | DM` : server.name;
+  mobileWorkspaceBtn.title = isDmConversation() ? 'DM listesi' : 'Kanal listesi';
+  mobileWorkspaceBtn.innerHTML = isMobileView() && mobileView !== 'chat' ? '&#10005;' : '&#9776;';
+  helperText.textContent = isDmConversation()
+    ? 'Direkt mesajlasma alani'
+    : (channel.kind === 'voice' ? 'Sesli oda kanali' : 'Topluluk metin kanali');
+  pinnedMessageText.textContent = getPinnedMessage();
+}
+
+function renderMembers() {
+  const server = getCurrentServer();
+  memberList.innerHTML = '';
+  if (!server) {
+    return;
+  }
+
+  const sortedMembers = [...server.members].sort((a, b) => {
+    const presenceOrder = { online: 0, away: 1, busy: 2, offline: 3 };
+    const aPresence = appState.presence[a.username]?.status || 'offline';
+    const bPresence = appState.presence[b.username]?.status || 'offline';
+    const diff = (presenceOrder[aPresence] ?? 4) - (presenceOrder[bPresence] ?? 4);
+    if (diff !== 0) {
+      return diff;
+    }
+    return a.username.localeCompare(b.username, 'tr');
+  });
+
+  const activeCount = sortedMembers.filter((member) => (appState.presence[member.username]?.status || 'offline') !== 'offline').length;
+  membersPanelTitle.textContent = 'Uyeler';
+  membersPanelSubtitle.textContent = `${activeCount} aktif, ${sortedMembers.length} toplam uye`;
+  membersCountPill.textContent = String(sortedMembers.length);
+
+  const sections = [
+    {
+      title: 'Cevrimici',
+      members: sortedMembers.filter((member) => (appState.presence[member.username]?.status || 'offline') !== 'offline')
+    },
+    {
+      title: 'Cevrimdisi',
+      members: sortedMembers.filter((member) => (appState.presence[member.username]?.status || 'offline') === 'offline')
+    }
+  ].filter((section) => section.members.length);
+
+  const buildMemberMarkup = (member) => {
+    const presence = appState.presence[member.username]?.status || 'offline';
+    const lastSeenAt = appState.presence[member.username]?.lastSeenAt || null;
+    const subtitle = [
+      member.role.toUpperCase(),
+      member.username === currentUser ? 'Sen' : null,
+      presence === 'offline' && lastSeenAt ? `Son gorulme ${formatLastSeen(lastSeenAt)}` : null
+    ].filter(Boolean).join(' • ');
+
+    return `
+      <div class="member-row" data-username="${member.username}">
+        <div class="member-row-main">
+          ${avatarMarkup(member.username, 'member-avatar')}
+          <div class="member-copy">
+            <div class="member-name">${escapeHtml(member.username)}</div>
+            <div class="member-role">${escapeHtml(subtitle)}</div>
+          </div>
+        </div>
+        <div class="member-actions">
+          <span class="presence ${presence}">${formatPresenceLabel(presence)}</span>
+          <button class="mini-action-btn member-profile-btn" data-username="${member.username}">Profil</button>
+        </div>
+      </div>
+    `;
+  };
+
+  memberList.innerHTML = sections.map((section) => `
+    <section class="member-group">
+      <div class="member-group-title">${section.title} — ${section.members.length}</div>
+      <div class="member-group-list">
+        ${section.members.map((member) => buildMemberMarkup(member)).join('')}
+      </div>
+    </section>
+  `).join('');
+
+  memberList.querySelectorAll('.member-profile-btn').forEach((button) => {
+    button.onclick = (event) => {
+      event.stopPropagation();
+      showUserProfile(button.dataset.username);
+    };
+  });
+
+  memberList.querySelectorAll('.member-row').forEach((row) => {
+    row.onclick = () => showUserProfile(row.dataset.username);
+  });
+}
+
+function renderDmList() {
+  dmList.innerHTML = '';
+  const users = appState.users
+    .filter((user) => user.username !== currentUser)
+    .sort((a, b) => {
+      const aLast = getLastDmMessage(a.username)?.time || 0;
+      const bLast = getLastDmMessage(b.username)?.time || 0;
+      if (aLast !== bLast) {
+        return bLast - aLast;
+      }
+      return a.username.localeCompare(b.username, 'tr');
+    });
+
+  membersPanelTitle.textContent = 'DM';
+  membersPanelSubtitle.textContent = `${users.length} kullanici ile direkt mesaj`;
+  membersCountPill.textContent = String(users.length);
+
+  dmList.innerHTML = users.map((user) => {
+    const presence = appState.presence[user.username]?.status || 'offline';
+    const lastSeenAt = appState.presence[user.username]?.lastSeenAt || null;
+    const lastMessage = getLastDmMessage(user.username);
+    const preview = lastMessage
+      ? `${lastMessage.user === currentUser ? 'Sen: ' : ''}${lastMessage.text || '[Ek]'}` 
+      : 'Henuz direkt mesaj yok';
+
+    return `
+      <div class="dm-row">
+        <button class="dm-user ${activeDmUser === user.username ? 'active' : ''}" data-username="${user.username}">
+          <span class="dm-user-top">
+            <span class="dm-user-head">
+              ${avatarMarkup(user.username, 'member-avatar')}
+              <span class="dm-name-wrap">
+                <strong>${escapeHtml(user.username)}</strong>
+                <span class="report-meta">${presence === 'offline' && lastSeenAt ? `Son gorulme ${formatLastSeen(lastSeenAt)}` : formatPresenceLabel(presence)}</span>
+              </span>
+            </span>
+            <span class="dm-user-tail">
+              ${unreadDmCounts[user.username] ? `<span class="badge-dot">${unreadDmCounts[user.username]}</span>` : ''}
+              <span class="presence ${presence}">${formatPresenceLabel(presence)}</span>
+            </span>
+          </span>
+          <span class="dm-user-bottom">
+            <span class="dm-preview">${escapeHtml(preview)}</span>
+            <span class="report-meta">${lastMessage ? formatTime(lastMessage.time) : ''}</span>
+          </span>
+        </button>
+        <button class="mini-action-btn dm-profile-btn" data-username="${user.username}">Profil</button>
+      </div>
+    `;
+  }).join('');
+
+  dmList.querySelectorAll('.dm-user').forEach((button) => {
+    button.onclick = () => openDm(button.dataset.username);
+    button.oncontextmenu = (event) => {
+      event.preventDefault();
+      showUserProfile(button.dataset.username);
+    };
+  });
+
+  dmList.querySelectorAll('.dm-profile-btn').forEach((button) => {
+    button.onclick = (event) => {
+      event.stopPropagation();
+      showUserProfile(button.dataset.username);
+    };
+  });
+}
+
+function renderCallOverlay() {
+  if (!callOverlay) {
+    return;
+  }
+
+  const callChannel = getCallChannel() || getFirstVoiceChannel();
+  const participants = getCurrentCallMembers();
+  const tiles = getCallTiles();
+  const focusedTile = getPreferredStageTile(tiles);
+  const hasCall = Boolean(localStream || participants.length || remoteStreams.size || activeCallChannelId);
+  const hasAudioTrack = Boolean(getActiveTrack(localStream, 'audio'));
+  const hasVideoTrack = Boolean(getActiveTrack(localStream, 'video'));
+  const cameraOnCount = tiles.filter((tile) => tile.hasVideo).length;
+  const audioOnCount = tiles.filter((tile) => tile.hasAudio).length;
+  const galleryLayoutClass = tiles.length <= 1
+    ? 'layout-1'
+    : tiles.length === 2
+      ? 'layout-2'
+      : tiles.length === 3
+        ? 'layout-3'
+        : tiles.length === 4
+          ? 'layout-4'
+          : 'layout-many';
+
+  callOverlayTitle.textContent = callChannel
+    ? `Voice / ${callChannel.name}`
+    : 'Sesli Oda Sec';
+  callOverlayMeta.textContent = callChannel
+    ? `${Math.max(participants.length, tiles.length || 1)} kisi | ${cameraOnCount} kamera | ${audioOnCount} mikrofon`
+    : 'Once bir sesli odaya katil, sonra kamerayi baslat.';
+
+  callOverlayStatus.textContent = hasCall
+    ? (lastCallCapabilityMessage || 'Goruntulu konusma aktif. Galeri yerlesiminde tum katilimcilari ayni anda takip edebilirsin.')
+    : (isSecureMediaContext()
+        ? 'Henuz aktif goruntulu konusma yok. Voice kanala girip buradan cagriyi baslat.'
+        : 'Bu ozellik icin HTTPS veya localhost gerekli.');
+
+  callOverlaySummary.textContent = hasVideoTrack
+    ? (cameraEnabled ? 'Kamera yayinliyor. Karsi taraf ayni voice odada kamerayi actiginda galeride gorunur.' : 'Kamera mevcut ama su an kapali.')
+    : 'Yerel kamera henuz baglanmadi. Kamera izni verip tekrar dene.';
+
+  callOverlayJoinBtn.disabled = !callChannel || currentVoiceChannelId === callChannel.id;
+  callOverlayJoinBtn.textContent = callChannel && currentVoiceChannelId === callChannel.id ? 'Voice Odadasin' : 'Voice Katil';
+  callOverlayStartBtn.disabled = !callChannel;
+  callOverlayMicBtn.disabled = !hasAudioTrack;
+  callOverlayCameraBtn.disabled = false;
+  callOverlayEndBtn.disabled = !hasCall;
+
+  callOverlayMicBtn.textContent = hasAudioTrack ? (micEnabled ? 'Mikrofon Acik' : 'Mikrofon Kapali') : 'Mikrofon Yok';
+  callOverlayCameraBtn.textContent = hasVideoTrack ? (cameraEnabled ? 'Kamera Acik' : 'Kamera Kapali') : 'Kamerayi Ac';
+  callOverlayMicBtn.className = `call-dock-btn ${hasAudioTrack ? (micEnabled ? 'active' : 'muted') : ''}`.trim();
+  callOverlayCameraBtn.className = `call-dock-btn ${hasVideoTrack ? (cameraEnabled ? 'active' : 'muted') : 'primary'}`.trim();
+
+  if (!focusedTile) {
+    callStage.innerHTML = `
+      <div class="call-stage-card placeholder">
+        <div class="call-empty-big">
+          <strong>Canli sahne hazir</strong>
+          <p>${escapeHtml(lastCallCapabilityMessage || 'Sesli odaya katilip Video Ac dugmesine bastiginda cagri galerisi burada acilir.')}</p>
+        </div>
+      </div>
+    `;
+    callFilmstrip.innerHTML = '';
+    callOverlayMembers.innerHTML = '<div class="empty-state">Henuz katilimci yok.</div>';
+    callOverlay.classList.toggle('hidden', !callOverlayOpen);
+    callOverlay.setAttribute('aria-hidden', String(!callOverlayOpen));
+    document.body.classList.toggle('call-open', callOverlayOpen);
+    return;
+  }
+
+  callStage.innerHTML = `
+    <div class="call-gallery ${galleryLayoutClass}">
+      ${tiles.map((tile) => {
+        const videoId = tile.hasVideo ? `callGalleryVideo_${tile.key}` : '';
+        return `
+          <article class="call-gallery-tile ${tile.key === focusedTile.key ? 'active' : ''}" data-call-focus="${escapeHtml(tile.key)}">
+            <div class="call-gallery-media">
+              ${tile.hasVideo
+                ? `<video id="${videoId}" autoplay ${tile.isSelf ? 'muted' : ''} playsinline></video>`
+                : `<div class="call-stage-fallback">
+                    ${callAvatarMarkup(tile.username)}
+                    <strong>${escapeHtml(tile.isSelf ? 'Kameran kapali' : `${tile.username} kamera acmadi`)}</strong>
+                    <div>${escapeHtml(callStatusText(tile))}</div>
+                  </div>`}
+            </div>
+            <div class="call-gallery-overlay">
+              <div class="call-gallery-corner">
+                <span class="call-gallery-chip ${tile.hasAudio ? '' : 'off'}">${tile.hasAudio ? 'Ses acik' : 'Mute'}</span>
+                <span class="call-gallery-chip ${tile.hasVideo ? '' : 'off'}">${tile.hasVideo ? 'Kamera acik' : 'Kamera kapali'}</span>
+              </div>
+              <div class="call-gallery-meta">
+                <div class="call-gallery-info">
+                  <div class="call-gallery-name">${escapeHtml(tile.isSelf ? 'Sen' : tile.username)}</div>
+                  <div class="call-gallery-copy">${escapeHtml(callStatusText(tile))}</div>
+                </div>
+                ${tile.key === focusedTile.key ? '<span class="call-gallery-chip">Odak</span>' : ''}
+              </div>
+            </div>
+          </article>
+        `;
+      }).join('')}
+    </div>
+  `;
+
+  callFilmstrip.innerHTML = `
+    <span class="call-summary-chip accent">Galeri</span>
+    <span class="call-summary-chip">${tiles.length} panel</span>
+    <span class="call-summary-chip">${cameraOnCount} kamera acik</span>
+    <span class="call-summary-chip">${audioOnCount} mikrofon acik</span>
+    ${callChannel ? `<span class="call-summary-chip">${escapeHtml(callChannel.name)}</span>` : ''}
+  `;
+
+  callOverlayMembers.innerHTML = tiles.map((tile) => `
+    <div class="call-member-row">
+      <div class="call-member-left">
+        ${callAvatarMarkup(tile.username, 'call-avatar small')}
+        <div class="call-member-meta">
+          <div class="call-member-name">${escapeHtml(tile.isSelf ? 'Sen' : tile.username)}</div>
+          <div class="call-member-subtitle">${escapeHtml(callStatusText(tile))}</div>
+        </div>
+      </div>
+      <div class="call-member-right">
+        <span class="call-badge ${tile.hasAudio ? 'on' : 'off'}">${tile.hasAudio ? 'Ses' : 'Mute'}</span>
+        <span class="call-badge ${tile.hasVideo ? 'on' : 'off'}">${tile.hasVideo ? 'Cam' : 'Kapali'}</span>
+      </div>
+    </div>
+  `).join('');
+
+  callStage.querySelectorAll('[data-call-focus]').forEach((tile) => {
+    tile.onclick = () => {
+      focusedCallTileKey = tile.dataset.callFocus;
+      renderCallOverlay();
+    };
+  });
+
+  tiles.forEach((tile) => {
+    if (tile.hasVideo && tile.stream) {
+      attachRenderedVideo(`callGalleryVideo_${tile.key}`, tile.stream, tile.isSelf);
+    }
+  });
+
+  callOverlay.classList.toggle('hidden', !callOverlayOpen);
+  callOverlay.setAttribute('aria-hidden', String(!callOverlayOpen));
+  document.body.classList.toggle('call-open', callOverlayOpen);
+}
+
 window.onload = () => {
   applyTheme(currentTheme);
   renderMobileLayout();
@@ -2853,6 +3238,12 @@ window.onload = () => {
       audioContext.resume();
     }
   }, { once: true });
+
+  searchBtn.innerHTML = '&#128269;';
+  pinBtn.innerHTML = '&#128204;';
+  videoBtn.innerHTML = '&#127909;';
+  membersToggleBtn.innerHTML = '&#128101;';
+  document.querySelector('.pinned-icon').innerHTML = '&#128204;';
 
   sendBtn.onclick = sendMessage;
   attachmentInput.onchange = async () => {
@@ -2928,12 +3319,12 @@ window.onload = () => {
   pinBtn.onclick = showPinnedInfo;
   membersToggleBtn.onclick = toggleMembersPanel;
   mobileWorkspaceBtn.onclick = () => {
+    const drawerTarget = isDmConversation() ? 'members' : 'channels';
     if (isDmConversation()) {
       activeSidebarTab = 'dm';
-      setMobileView('members');
-      return;
+      renderSidebarTab();
     }
-    setMobileView('channels');
+    setMobileView(mobileView === drawerTarget ? 'chat' : drawerTarget);
   };
   mobileNavButtons.forEach((button) => {
     button.onclick = () => {
