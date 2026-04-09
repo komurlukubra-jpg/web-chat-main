@@ -37,7 +37,7 @@
       --overlay: rgba(0, 0, 0, 0.62);
       --server-rail-width: 72px;
       --channels-width: 292px;
-      --sidebar-width: 252px;
+      --sidebar-width: 300px;
     }
 
     body.light-mode {
@@ -1268,6 +1268,12 @@
         padding-right: 14px;
       }
 
+      .channels .brand,
+      .channels .action-grid,
+      #voiceShortcutCard {
+        display: none;
+      }
+
       #accountCard {
         display: none;
       }
@@ -1322,6 +1328,11 @@
       }
 
       .call-side {
+        display: none;
+      }
+
+      #searchBtn,
+      #pinBtn {
         display: none;
       }
     }
@@ -2355,6 +2366,11 @@
       flex-shrink: 0;
     }
 
+    .member-profile-btn,
+    .dm-profile-btn {
+      display: none;
+    }
+
     .badge-dot {
       min-width: 20px;
       height: 20px;
@@ -2484,6 +2500,18 @@
       display: flex;
       gap: 12px;
       align-items: flex-start;
+      min-width: 0;
+    }
+
+    .workspace-title-group > div {
+      min-width: 0;
+    }
+
+    .workspace-title-group h2,
+    #helperText {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
   </style>
 </head>
