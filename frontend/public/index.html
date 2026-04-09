@@ -2749,6 +2749,276 @@
         display: none !important;
       }
     }
+
+    @media (max-width: 860px) {
+      :root {
+        --mobile-edge: 14px;
+      }
+
+      body {
+        background: var(--panel-2);
+      }
+
+      .app-shell[data-mobile-view="servers"] .servers,
+      .app-shell[data-mobile-view="channels"] .channels,
+      .app-shell[data-mobile-view="members"] .sidebar,
+      .app-shell[data-mobile-view="chat"] .workspace {
+        min-height: calc(100dvh - 92px);
+      }
+
+      .servers,
+      .channels,
+      .sidebar {
+        padding-bottom: 18px;
+      }
+
+      .mobile-pane-header {
+        padding: 16px var(--mobile-edge) 8px;
+      }
+
+      .mobile-pane-header h2 {
+        font-size: 23px;
+      }
+
+      .mobile-pane-header p {
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .server-stack {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 10px;
+        padding: 6px var(--mobile-edge) 8px;
+      }
+
+      .server-pill {
+        width: 50px;
+        height: 50px;
+        border-radius: 18px;
+      }
+
+      .icon-btn {
+        width: calc(100% - (var(--mobile-edge) * 2));
+        margin: 10px var(--mobile-edge) 0;
+      }
+
+      #serverSummaryCard {
+        margin: 0 var(--mobile-edge) 10px;
+        border-radius: 18px;
+        padding: 14px;
+      }
+
+      #channelTree {
+        padding-left: var(--mobile-edge);
+        padding-right: var(--mobile-edge);
+      }
+
+      .channel-group {
+        gap: 6px;
+      }
+
+      .channel-item {
+        padding: 12px 12px;
+        border-radius: 14px;
+      }
+
+      .channel-item.active {
+        box-shadow: inset 0 0 0 1px rgba(88, 101, 242, 0.3);
+      }
+
+      .workspace {
+        background: var(--panel);
+      }
+
+      .workspace-header {
+        padding: 12px var(--mobile-edge);
+        min-height: 58px;
+      }
+
+      .workspace-meta {
+        gap: 8px;
+      }
+
+      #videoBtn,
+      #membersToggleBtn {
+        display: grid !important;
+      }
+
+      .top-actions {
+        gap: 8px;
+      }
+
+      .icon-action {
+        width: 36px;
+        height: 36px;
+        border-radius: 12px;
+      }
+
+      .chat-area {
+        padding: 4px 0 6px;
+      }
+
+      .date-divider {
+        padding: 14px var(--mobile-edge) 8px;
+      }
+
+      .message-row {
+        padding: 8px var(--mobile-edge);
+      }
+
+      .message-avatar {
+        width: 36px;
+        height: 36px;
+      }
+
+      .message-author {
+        font-size: 15px;
+      }
+
+      .message-body {
+        font-size: 14px;
+        line-height: 1.45;
+      }
+
+      .reactions-row {
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+
+      .composer {
+        padding: 10px var(--mobile-edge) calc(14px + env(safe-area-inset-bottom));
+        border-top: 1px solid var(--line-soft);
+      }
+
+      .composer-row {
+        gap: 10px;
+      }
+
+      .composer-addon {
+        width: 38px;
+        height: 38px;
+        border-radius: 14px;
+      }
+
+      #messageInput {
+        min-height: 42px;
+        border-radius: 14px;
+      }
+
+      .send-btn {
+        min-width: 74px;
+        height: 42px;
+        border-radius: 14px;
+        padding: 0 14px;
+      }
+
+      .member-tabs {
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        padding: 10px var(--mobile-edge) 8px;
+      }
+
+      .member-tab {
+        min-height: 42px;
+        border-radius: 14px;
+      }
+
+      .sidebar-panel {
+        padding: 12px var(--mobile-edge);
+      }
+
+      .sidebar-panel.utility-panel,
+      #callPanelSection,
+      #reportList,
+      #pollList,
+      #permissionsList {
+        display: none !important;
+      }
+
+      .sidebar-panel-main {
+        padding-top: 8px;
+      }
+
+      .member-group-list,
+      .dm-list {
+        gap: 8px;
+      }
+
+      .member-row,
+      .dm-user {
+        padding: 10px 12px;
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid var(--line-subtle);
+      }
+
+      .dm-user-head {
+        gap: 12px;
+      }
+
+      .dm-name {
+        font-size: 14px;
+      }
+
+      .dm-preview,
+      .last-seen,
+      .member-role {
+        font-size: 12px;
+      }
+
+      .mobile-nav {
+        left: 10px;
+        right: 10px;
+        bottom: calc(8px + env(safe-area-inset-bottom));
+        padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+        border-radius: 18px;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+      }
+
+      .mobile-nav-btn {
+        min-height: 50px;
+        padding: 6px 4px;
+        border-radius: 14px;
+        font-size: 11px;
+      }
+
+      .mobile-nav-icon {
+        font-size: 17px;
+      }
+
+      .modal-overlay {
+        align-items: flex-end;
+        justify-content: stretch;
+        padding: 12px;
+        background: rgba(0, 0, 0, 0.58);
+      }
+
+      .modal {
+        width: 100%;
+        max-width: none;
+        max-height: min(82dvh, 720px);
+        overflow: auto;
+        padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
+        border-radius: 24px 24px 18px 18px;
+        box-shadow: 0 -18px 48px rgba(0, 0, 0, 0.32);
+      }
+
+      .modal h2 {
+        font-size: 24px;
+        line-height: 1.1;
+      }
+
+      .modal-copy {
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .modal-input,
+      .modal-btn {
+        min-height: 46px;
+        border-radius: 14px;
+      }
+    }
   </style>
 </head>
 <body>
