@@ -134,11 +134,38 @@
       align-items: center;
       justify-content: flex-start;
       padding: 12px 10px;
-      overflow: hidden;
+      overflow-y: auto;
+      overflow-x: hidden;
+      scrollbar-gutter: stable;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(var(--accent-rgb), 0.8) rgba(255, 255, 255, 0.06);
+    }
+
+    .servers::-webkit-scrollbar {
+      width: 10px;
+    }
+
+    .servers::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.04);
+      border-radius: 999px;
+    }
+
+    .servers::-webkit-scrollbar-thumb {
+      background: rgba(var(--accent-rgb), 0.82);
+      border-radius: 999px;
+      border: 2px solid rgba(18, 15, 22, 0.55);
     }
 
     body.light-mode .servers {
       background: radial-gradient(circle at top, rgba(var(--accent-rgb), 0.14), transparent 34%), var(--server-rail-bg);
+    }
+
+    body.light-mode .servers::-webkit-scrollbar-track {
+      background: rgba(31, 35, 40, 0.08);
+    }
+
+    body.light-mode .servers::-webkit-scrollbar-thumb {
+      border-color: rgba(255, 255, 255, 0.7);
     }
 
     .server-stack {
@@ -147,7 +174,7 @@
       gap: 12px;
       width: 100%;
       align-items: center;
-      overflow: auto;
+      overflow: visible;
       min-height: 0;
     }
 
@@ -199,7 +226,8 @@
       cursor: pointer;
       font-size: 24px;
       box-shadow: 0 10px 24px rgba(var(--accent-rgb), 0.28);
-      margin-top: auto;
+      margin-top: 12px;
+      flex-shrink: 0;
     }
 
     .channels {
