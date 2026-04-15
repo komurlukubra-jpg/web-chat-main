@@ -969,6 +969,7 @@
       justify-content: center;
       padding: 20px;
       z-index: 120;
+      overflow: auto;
     }
 
     body.modal-open .app-shell {
@@ -986,6 +987,15 @@
       display: grid;
       gap: 12px;
       border-radius: 18px;
+      max-height: min(88dvh, 820px);
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      margin: auto;
+      min-width: 0;
+    }
+
+    .modal.modal-wide {
+      width: min(680px, 100%);
     }
 
     .checkbox-row {
@@ -1486,9 +1496,7 @@
     .voice-subtitle,
     #accountCard .panel-subtitle {
       line-height: 1.35;
-      display: -webkit-box;
-      -webkit-box-orient: vertical;
-      -webkit-line-clamp: 2;
+      max-height: calc(1.35em * 2);
       overflow: hidden;
     }
 
@@ -1610,7 +1618,7 @@
 
       #accountCard .panel-subtitle,
       .voice-subtitle {
-        -webkit-line-clamp: 1;
+        max-height: 1.35em;
       }
     }
 

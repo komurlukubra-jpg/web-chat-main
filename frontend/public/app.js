@@ -399,8 +399,14 @@ function playNotificationSound() {
   }
 }
 
-function showModal(html) {
+function showModal(html, options = {}) {
   modal.innerHTML = html;
+  modal.className = 'modal';
+  if (options.className) {
+    modal.classList.add(...String(options.className).split(/\s+/).filter(Boolean));
+  }
+  modal.scrollTop = 0;
+  modalOverlay.scrollTop = 0;
   document.body.classList.add('modal-open');
   modalOverlay.classList.remove('hidden');
 }
@@ -4295,7 +4301,7 @@ async function showUtilityHub() {
     ${canManage ? '<button id="utilityCreateInviteBtn" class="modal-btn primary">Davet Linki Olustur</button>' : ''}
     ${canManage ? '<button id="utilityRoleBtn" class="modal-btn secondary">Rol Yonetimi</button>' : ''}
     ${canManage ? '<button id="utilityModBtn" class="modal-btn secondary">Moderasyon</button>' : ''}
-  `);
+  `, { className: 'modal-wide' });
 
   document.getElementById('utilitySavePrivacyBtn').onclick = async () => {
     try {
