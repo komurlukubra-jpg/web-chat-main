@@ -205,11 +205,10 @@
     .channels {
       border-right: 1px solid var(--line);
       background: linear-gradient(180deg, rgba(var(--accent-rgb), 0.09), transparent 120px), var(--panel-2);
-      display: grid;
-      grid-template-rows: auto auto auto auto auto auto auto;
+      display: flex;
+      flex-direction: column;
       gap: 12px;
       padding: 0 0 12px;
-      align-content: start;
       overflow-y: auto;
       overflow-x: hidden;
       scrollbar-gutter: stable;
@@ -242,6 +241,7 @@
 
     .channels > * {
       min-height: 0;
+      flex: 0 0 auto;
     }
 
     .brand {
@@ -951,7 +951,6 @@
     }
 
     #channelTree {
-      grid-row: auto;
       padding: 0 10px 4px;
       overflow: visible;
     }
