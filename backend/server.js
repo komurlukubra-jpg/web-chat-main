@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto = require('crypto');
 const fs = require('fs');
 const http = require('http');
 const os = require('os');
@@ -17,8 +18,21 @@ const RESERVED_USERNAMES = new Set(['system', 'bot']);
 const ALLOWED_PRESENCE = new Set(['online', 'away', 'busy']);
 const DATABASE_URL = process.env.DATABASE_URL || '';
 const SNAPSHOT_ROW_ID = 'primary';
+const SMTP_HOST = process.env.SMTP_HOST || '';
+const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
+const SMTP_SECURE = String(process.env.SMTP_SECURE || '').toLowerCase() === 'true' || SMTP_PORT === 465;
+const SMTP_USER = process.env.SMTP_USER || '';
+const SMTP_PASS = process.env.SMTP_PASS || '';
+const MAIL_FROM = process.env.MAIL_FROM || SMTP_USER || '';
+const MAIL_FROM_NAME = process.env.MAIL_FROM_NAME || 'Web Chat Community';
+const REGISTER_CODE_TTL_MS = Number(process.env.REGISTER_CODE_TTL_MS || 10 * 60 * 1000);
+const REGISTER_CODE_RESEND_MS = Number(process.env.REGISTER_CODE_RESEND_MS || 60 * 1000);
+const REGISTER_MAX_VERIFY_ATTEMPTS = Number(process.env.REGISTER_MAX_VERIFY_ATTEMPTS || 5);
 
 app.use(express.json({ limit: '10mb' }));
+
+let mailTransport = null;
+let mailTransportKey = '';
 
 function uid(prefix) {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
@@ -32,8 +46,109 @@ function normalizeUsername(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+function normalizeEmail(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
 function isValidUsername(username) {
   return /^[\p{L}\p{N}_.-]{3,24}$/u.test(username);
+}
+
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || '').trim());
+}
+
+function hashVerificationCode(code) {
+  return crypto.createHash('sha256').update(String(code)).digest('hex');
+}
+
+function createVerificationCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+function formatMailFrom() {
+  if (!MAIL_FROM) {
+    return '';
+  }
+  return MAIL_FROM_NAME ? `"${MAIL_FROM_NAME}" <${MAIL_FROM}>` : MAIL_FROM;
+}
+
+function getMailTransport() {
+  if (!SMTP_HOST || !SMTP_PORT || !MAIL_FROM) {
+    return null;
+  }
+
+  const configKey = JSON.stringify({
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    secure: SMTP_SECURE,
+    user: SMTP_USER,
+    from: MAIL_FROM
+  });
+
+  if (mailTransport && mailTransportKey === configKey) {
+    return mailTransport;
+  }
+
+  const nodemailer = require('nodemailer');
+  const transportOptions = {
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    secure: SMTP_SECURE
+  };
+
+  if (SMTP_USER || SMTP_PASS) {
+    transportOptions.auth = {
+      user: SMTP_USER,
+      pass: SMTP_PASS
+    };
+  }
+
+  mailTransport = nodemailer.createTransport(transportOptions);
+  mailTransportKey = configKey;
+  return mailTransport;
+}
+
+async function sendRegistrationCodeEmail({ email, username, code }) {
+  const transport = getMailTransport();
+  if (!transport) {
+    throw new Error('Email service is not configured. Set SMTP_HOST, SMTP_PORT, and MAIL_FROM.');
+  }
+
+  const expiresInMinutes = Math.max(1, Math.round(REGISTER_CODE_TTL_MS / 60_000));
+  await transport.sendMail({
+    from: formatMailFrom(),
+    to: email,
+    subject: 'Kayit dogrulama kodun',
+    text: [
+      `Merhaba ${username},`,
+      '',
+      'Web Chat Community kaydini tamamlamak icin asagidaki kodu kullan:',
+      code,
+      '',
+      `Kod ${expiresInMinutes} dakika icinde gecersiz olacak.`,
+      'Bu islemi sen baslatmadiysan bu maili yok sayabilirsin.'
+    ].join('\n'),
+    html: `
+      <div style="font-family:Arial,sans-serif;line-height:1.5;color:#1f2328;">
+        <p>Merhaba <strong>${username}</strong>,</p>
+        <p>Web Chat Community kaydini tamamlamak icin asagidaki kodu kullan:</p>
+        <div style="font-size:28px;font-weight:700;letter-spacing:6px;margin:16px 0;">${code}</div>
+        <p>Kod <strong>${expiresInMinutes} dakika</strong> icinde gecersiz olacak.</p>
+        <p>Bu islemi sen baslatmadiysan bu maili yok sayabilirsin.</p>
+      </div>
+    `
+  });
+}
+
+function maskEmail(email) {
+  const trimmed = String(email || '').trim();
+  const [localPart, domain = ''] = trimmed.split('@');
+  if (!localPart || !domain) {
+    return trimmed;
+  }
+  const visible = localPart.length <= 2 ? localPart[0] || '*' : `${localPart[0]}${'*'.repeat(Math.max(1, localPart.length - 2))}${localPart.slice(-1)}`;
+  return `${visible}@${domain}`;
 }
 
 function ensureDataDir() {
@@ -52,10 +167,15 @@ function defaultState() {
 
   return {
     users: [
-      { username: 'admin', password: '123', banned: false, mutedUntil: null, status: 'online' },
-      { username: 'moderator', password: '123', banned: false, mutedUntil: null, status: 'away' },
-      { username: 'student', password: '123', banned: false, mutedUntil: null, status: 'online' }
+      { username: 'admin', password: '123', email: null, emailVerified: false, banned: false, mutedUntil: null, status: 'online' },
+      { username: 'moderator', password: '123', email: null, emailVerified: false, banned: false, mutedUntil: null, status: 'away' },
+      { username: 'student', password: '123', email: null, emailVerified: false, banned: false, mutedUntil: null, status: 'online' }
     ],
+    pendingRegistrations: [],
+    friendships: [],
+    friendRequests: [],
+    blocks: {},
+    privacy: {},
     auditLogs: [],
     invites: [],
     directMessages: {},
@@ -136,6 +256,11 @@ function normalizeState(loadedState) {
   const nextState = loadedState || {};
 
   nextState.users = Array.isArray(nextState.users) ? nextState.users : [];
+  nextState.pendingRegistrations = Array.isArray(nextState.pendingRegistrations) ? nextState.pendingRegistrations : [];
+  nextState.friendships = Array.isArray(nextState.friendships) ? nextState.friendships : [];
+  nextState.friendRequests = Array.isArray(nextState.friendRequests) ? nextState.friendRequests : [];
+  nextState.blocks = nextState.blocks && typeof nextState.blocks === 'object' ? nextState.blocks : {};
+  nextState.privacy = nextState.privacy && typeof nextState.privacy === 'object' ? nextState.privacy : {};
   nextState.auditLogs = Array.isArray(nextState.auditLogs) ? nextState.auditLogs : [];
   nextState.invites = Array.isArray(nextState.invites) ? nextState.invites : [];
   nextState.servers = Array.isArray(nextState.servers) ? nextState.servers : [];
@@ -145,6 +270,16 @@ function normalizeState(loadedState) {
   nextState.presence = nextState.presence && typeof nextState.presence === 'object' ? nextState.presence : {};
 
   nextState.users.forEach((user) => {
+    user.email = user.email ? String(user.email).trim() : null;
+    user.emailVerified = Boolean(user.emailVerified);
+    nextState.blocks[user.username] = Array.isArray(nextState.blocks[user.username]) ? nextState.blocks[user.username] : [];
+    nextState.privacy[user.username] = nextState.privacy[user.username] && typeof nextState.privacy[user.username] === 'object'
+      ? nextState.privacy[user.username]
+      : { dmPolicy: 'everyone' };
+    if (!nextState.privacy[user.username].dmPolicy) {
+      nextState.privacy[user.username].dmPolicy = 'everyone';
+    }
+
     if (!nextState.presence[user.username]) {
       nextState.presence[user.username] = {
         status: user.status || 'offline',
@@ -176,6 +311,20 @@ function normalizeState(loadedState) {
       ...message
     }));
   });
+
+  nextState.pendingRegistrations = nextState.pendingRegistrations
+    .map((entry) => ({
+      username: String(entry.username || '').trim(),
+      email: String(entry.email || '').trim(),
+      password: String(entry.password || ''),
+      avatar: entry.avatar || null,
+      codeHash: String(entry.codeHash || ''),
+      expiresAt: Number(entry.expiresAt || 0),
+      resendAvailableAt: Number(entry.resendAvailableAt || 0),
+      requestedAt: Number(entry.requestedAt || 0),
+      attempts: Number(entry.attempts || 0)
+    }))
+    .filter((entry) => entry.username && entry.email && entry.password && entry.codeHash && entry.expiresAt > now());
 
   return nextState;
 }
@@ -295,7 +444,8 @@ function sanitizeUser(user) {
     avatar: user.avatar || null,
     status: effectivePresence.status,
     preferredStatus: state.presence[user.username]?.status || user.status || 'online',
-    lastSeenAt: effectivePresence.lastSeenAt || null
+    lastSeenAt: effectivePresence.lastSeenAt || null,
+    privacy: { dmPolicy: ensureSocialProfile(user.username).privacy.dmPolicy || 'everyone' }
   };
 }
 
@@ -305,8 +455,118 @@ function getDmKey(userA, userB) {
   return [canonicalA, canonicalB].sort().join('__');
 }
 
+function getFriendKey(userA, userB) {
+  const canonicalA = getUser(userA)?.username || userA;
+  const canonicalB = getUser(userB)?.username || userB;
+  return [canonicalA, canonicalB].sort().join('__');
+}
+
 function getDmMessages(userA, userB) {
   return state.directMessages[getDmKey(userA, userB)] || [];
+}
+
+function ensureSocialProfile(username) {
+  const user = getUser(username);
+  const canonicalUsername = user?.username || username;
+  state.blocks[canonicalUsername] = Array.isArray(state.blocks[canonicalUsername]) ? state.blocks[canonicalUsername] : [];
+  state.privacy[canonicalUsername] = state.privacy[canonicalUsername] && typeof state.privacy[canonicalUsername] === 'object'
+    ? state.privacy[canonicalUsername]
+    : { dmPolicy: 'everyone' };
+  if (!state.privacy[canonicalUsername].dmPolicy) {
+    state.privacy[canonicalUsername].dmPolicy = 'everyone';
+  }
+  return {
+    username: canonicalUsername,
+    blockedUsers: state.blocks[canonicalUsername],
+    privacy: state.privacy[canonicalUsername]
+  };
+}
+
+function getPendingFriendRequest(from, to) {
+  const canonicalFrom = getUser(from)?.username || from;
+  const canonicalTo = getUser(to)?.username || to;
+  return state.friendRequests.find((request) => (
+    request.from === canonicalFrom
+    && request.to === canonicalTo
+    && request.status === 'pending'
+  )) || null;
+}
+
+function areFriends(userA, userB) {
+  const key = getFriendKey(userA, userB);
+  return state.friendships.some((friendship) => friendship.key === key);
+}
+
+function isBlocked(blocker, target) {
+  const blockerProfile = ensureSocialProfile(blocker);
+  const canonicalTarget = getUser(target)?.username || target;
+  return blockerProfile.blockedUsers.includes(canonicalTarget);
+}
+
+function canUsersDm(sender, receiver) {
+  const senderUser = getUser(sender);
+  const receiverUser = getUser(receiver);
+  if (!senderUser || !receiverUser) {
+    return false;
+  }
+  if (senderUser.username === receiverUser.username) {
+    return false;
+  }
+  if (isBlocked(senderUser.username, receiverUser.username) || isBlocked(receiverUser.username, senderUser.username)) {
+    return false;
+  }
+  const receiverPrivacy = ensureSocialProfile(receiverUser.username).privacy;
+  if (receiverPrivacy.dmPolicy === 'friends' && !areFriends(senderUser.username, receiverUser.username)) {
+    return false;
+  }
+  return true;
+}
+
+function serializeSocialState(username) {
+  const socialProfile = ensureSocialProfile(username);
+  const blockedByUsers = state.users
+    .filter((user) => user.username !== socialProfile.username && isBlocked(user.username, socialProfile.username))
+    .map((user) => user.username)
+    .sort((a, b) => a.localeCompare(b, 'tr'));
+  const friends = state.friendships
+    .filter((friendship) => friendship.users.includes(socialProfile.username))
+    .map((friendship) => {
+      const peerUsername = friendship.users.find((user) => user !== socialProfile.username);
+      return {
+        username: peerUsername,
+        since: friendship.createdAt
+      };
+    })
+    .sort((a, b) => a.username.localeCompare(b.username, 'tr'));
+
+  const incomingRequests = state.friendRequests
+    .filter((request) => request.to === socialProfile.username && request.status === 'pending')
+    .map((request) => ({
+      id: request.id,
+      username: request.from,
+      createdAt: request.createdAt
+    }))
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+  const outgoingRequests = state.friendRequests
+    .filter((request) => request.from === socialProfile.username && request.status === 'pending')
+    .map((request) => ({
+      id: request.id,
+      username: request.to,
+      createdAt: request.createdAt
+    }))
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+  return {
+    privacy: {
+      dmPolicy: socialProfile.privacy.dmPolicy || 'everyone'
+    },
+    blockedUsers: [...socialProfile.blockedUsers].sort((a, b) => a.localeCompare(b, 'tr')),
+    blockedByUsers,
+    friends,
+    incomingRequests,
+    outgoingRequests
+  };
 }
 
 function markDmSeen(viewer, peerUsername) {
@@ -329,7 +589,7 @@ function markDmSeen(viewer, peerUsername) {
 function buildVisibleDms(username) {
   const result = {};
   state.users.forEach((user) => {
-    if (user.username !== username) {
+    if (user.username !== username && canUsersDm(username, user.username)) {
       result[user.username] = getDmMessages(username, user.username);
     }
   });
@@ -339,6 +599,63 @@ function buildVisibleDms(username) {
 function getUser(username) {
   const normalized = normalizeUsername(username);
   return state.users.find((user) => normalizeUsername(user.username) === normalized);
+}
+
+function getUserByEmail(email) {
+  const normalized = normalizeEmail(email);
+  if (!normalized) {
+    return null;
+  }
+  return state.users.find((user) => normalizeEmail(user.email) === normalized);
+}
+
+function resolveLoginUser(identifier) {
+  return getUser(identifier) || getUserByEmail(identifier) || null;
+}
+
+function pruneExpiredPendingRegistrations() {
+  const currentTime = now();
+  const before = state.pendingRegistrations.length;
+  state.pendingRegistrations = state.pendingRegistrations.filter((entry) => entry.expiresAt > currentTime);
+  return before !== state.pendingRegistrations.length;
+}
+
+function getPendingRegistration({ username, email }) {
+  pruneExpiredPendingRegistrations();
+  const normalizedUsername = normalizeUsername(username);
+  const normalizedEmail = normalizeEmail(email);
+  return state.pendingRegistrations.find((entry) => (
+    normalizeUsername(entry.username) === normalizedUsername
+    && normalizeEmail(entry.email) === normalizedEmail
+  )) || null;
+}
+
+function upsertPendingRegistration({ username, email, password, avatar, code }) {
+  const currentTime = now();
+  const pendingEntry = {
+    username: String(username || '').trim(),
+    email: String(email || '').trim(),
+    password: String(password || ''),
+    avatar: avatar || null,
+    codeHash: hashVerificationCode(code),
+    expiresAt: currentTime + REGISTER_CODE_TTL_MS,
+    resendAvailableAt: currentTime + REGISTER_CODE_RESEND_MS,
+    requestedAt: currentTime,
+    attempts: 0
+  };
+
+  const existingIndex = state.pendingRegistrations.findIndex((entry) => (
+    normalizeUsername(entry.username) === normalizeUsername(pendingEntry.username)
+    || normalizeEmail(entry.email) === normalizeEmail(pendingEntry.email)
+  ));
+
+  if (existingIndex >= 0) {
+    state.pendingRegistrations[existingIndex] = pendingEntry;
+  } else {
+    state.pendingRegistrations.push(pendingEntry);
+  }
+
+  return pendingEntry;
 }
 
 function ensurePresenceEntry(username) {
@@ -674,6 +991,7 @@ function buildBootstrap(username) {
       persistence: persistenceMode
     },
     currentUser: sanitizeUser(getUser(canonicalUsername)),
+    social: serializeSocialState(canonicalUsername),
     users: state.users.map(sanitizeUser),
     servers: state.servers
       .filter((serverItem) => getServerMember(serverItem, canonicalUsername))
@@ -840,7 +1158,7 @@ function sendDmMessages(ws, username, peerUsername) {
   ws.send(JSON.stringify({
     type: 'dmMessages',
     peerUsername,
-    messages: getDmMessages(username, peerUsername)
+    messages: canUsersDm(username, peerUsername) ? getDmMessages(username, peerUsername) : []
   }));
 }
 
@@ -975,6 +1293,19 @@ app.get('/api/invite/:code', (req, res) => {
   });
 });
 
+app.get('/api/social', (req, res) => {
+  const user = getUser(req.query.username);
+  if (!user) {
+    return res.status(404).json({ error: 'User not found.' });
+  }
+
+  res.json({
+    social: serializeSocialState(user.username),
+    users: state.users.map(sanitizeUser),
+    directMessages: buildVisibleDms(user.username)
+  });
+});
+
 app.post('/api/invite', (req, res) => {
   const { serverId, actor, channelId, maxUses, expiresInHours } = req.body;
   const serverItem = getServer(serverId);
@@ -1101,17 +1432,209 @@ app.post('/api/invite/revoke', (req, res) => {
   });
 });
 
-app.post('/api/register', (req, res) => {
+app.post('/api/friend-request', (req, res) => {
+  const { from, to } = req.body;
+  const sender = getUser(from);
+  const receiver = getUser(to);
+
+  if (!sender || !receiver) {
+    return res.status(404).json({ error: 'User not found.' });
+  }
+  if (sender.username === receiver.username) {
+    return res.status(400).json({ error: 'Kendine arkadaslik istegi gonderemezsin.' });
+  }
+  if (areFriends(sender.username, receiver.username)) {
+    return res.status(400).json({ error: 'Zaten arkadassiniz.' });
+  }
+  if (isBlocked(sender.username, receiver.username) || isBlocked(receiver.username, sender.username)) {
+    return res.status(403).json({ error: 'Bu kullanici ile sosyal etkilesim engellenmis.' });
+  }
+  if (getPendingFriendRequest(sender.username, receiver.username) || getPendingFriendRequest(receiver.username, sender.username)) {
+    return res.status(400).json({ error: 'Bekleyen bir arkadaslik istegi zaten var.' });
+  }
+
+  state.friendRequests.unshift({
+    id: uid('frq'),
+    from: sender.username,
+    to: receiver.username,
+    status: 'pending',
+    createdAt: now(),
+    respondedAt: null
+  });
+
+  state.servers
+    .filter((serverItem) => getServerMember(serverItem, sender.username) || getServerMember(serverItem, receiver.username))
+    .forEach((serverItem) => {
+      logAuditEvent({
+        serverId: serverItem.id,
+        actor: sender.username,
+        action: 'friend.request.sent',
+        targetType: 'user',
+        targetId: receiver.username,
+        summary: `${sender.username} ${receiver.username} kullanicisina arkadaslik istegi gonderdi.`
+      });
+    });
+
+  saveState();
+  refreshSocialSessions([sender.username, receiver.username]);
+  res.json({ success: true });
+});
+
+app.post('/api/friend-request/respond', (req, res) => {
+  const { username, fromUser, action } = req.body;
+  const receiver = getUser(username);
+  const sender = getUser(fromUser);
+  const requestItem = getPendingFriendRequest(fromUser, username);
+
+  if (!receiver || !sender || !requestItem) {
+    return res.status(404).json({ error: 'Bekleyen istek bulunamadi.' });
+  }
+  if (!['accept', 'decline'].includes(action)) {
+    return res.status(400).json({ error: 'Invalid action.' });
+  }
+
+  requestItem.status = action === 'accept' ? 'accepted' : 'declined';
+  requestItem.respondedAt = now();
+
+  if (action === 'accept' && !areFriends(sender.username, receiver.username)) {
+    state.friendships.unshift({
+      id: uid('frd'),
+      key: getFriendKey(sender.username, receiver.username),
+      users: [sender.username, receiver.username].sort(),
+      createdAt: now()
+    });
+  }
+
+  state.servers
+    .filter((serverItem) => getServerMember(serverItem, sender.username) || getServerMember(serverItem, receiver.username))
+    .forEach((serverItem) => {
+      logAuditEvent({
+        serverId: serverItem.id,
+        actor: receiver.username,
+        action: action === 'accept' ? 'friend.request.accepted' : 'friend.request.declined',
+        targetType: 'user',
+        targetId: sender.username,
+        summary: `${receiver.username} ${sender.username} istegine ${action === 'accept' ? 'kabul' : 'red'} verdi.`
+      });
+    });
+
+  saveState();
+  refreshSocialSessions([sender.username, receiver.username]);
+  res.json({ success: true });
+});
+
+app.post('/api/friend/remove', (req, res) => {
+  const { username, targetUser } = req.body;
+  const user = getUser(username);
+  const target = getUser(targetUser);
+  if (!user || !target) {
+    return res.status(404).json({ error: 'User not found.' });
+  }
+
+  const key = getFriendKey(user.username, target.username);
+  const before = state.friendships.length;
+  state.friendships = state.friendships.filter((friendship) => friendship.key !== key);
+  if (state.friendships.length === before) {
+    return res.status(404).json({ error: 'Arkadaslik bulunamadi.' });
+  }
+
+  state.servers
+    .filter((serverItem) => getServerMember(serverItem, user.username) || getServerMember(serverItem, target.username))
+    .forEach((serverItem) => {
+      logAuditEvent({
+        serverId: serverItem.id,
+        actor: user.username,
+        action: 'friend.removed',
+        targetType: 'user',
+        targetId: target.username,
+        summary: `${user.username} ${target.username} kullanicisini arkadas listesinden cikardi.`
+      });
+    });
+
+  saveState();
+  refreshSocialSessions([user.username, target.username]);
+  res.json({ success: true });
+});
+
+app.post('/api/friend/block', (req, res) => {
+  const { username, targetUser, blocked } = req.body;
+  const user = getUser(username);
+  const target = getUser(targetUser);
+  if (!user || !target) {
+    return res.status(404).json({ error: 'User not found.' });
+  }
+
+  const profile = ensureSocialProfile(user.username);
+  profile.blockedUsers = profile.blockedUsers.filter((item) => item !== target.username);
+  if (blocked) {
+    profile.blockedUsers.push(target.username);
+  }
+  state.blocks[user.username] = [...new Set(profile.blockedUsers)];
+
+  logAuditEvent({
+    serverId: null,
+    actor: user.username,
+    action: blocked ? 'user.blocked' : 'user.unblocked',
+    targetType: 'user',
+    targetId: target.username,
+    summary: `${user.username} ${target.username} kullanicisini ${blocked ? 'engelledi' : 'engelini kaldirdi'}.`
+  });
+
+  saveState();
+  refreshSocialSessions([user.username, target.username]);
+  res.json({ success: true });
+});
+
+app.post('/api/privacy', (req, res) => {
+  const { username, dmPolicy } = req.body;
+  const user = getUser(username);
+  if (!user) {
+    return res.status(404).json({ error: 'User not found.' });
+  }
+  if (!['everyone', 'friends'].includes(dmPolicy)) {
+    return res.status(400).json({ error: 'Invalid privacy setting.' });
+  }
+
+  ensureSocialProfile(user.username).privacy.dmPolicy = dmPolicy;
+  state.privacy[user.username].dmPolicy = dmPolicy;
+
+  logAuditEvent({
+    actor: user.username,
+    action: 'privacy.updated',
+    targetType: 'user',
+    targetId: user.username,
+    summary: `${user.username} DM gizlilik ayarini ${dmPolicy} olarak degistirdi.`,
+    metadata: { dmPolicy }
+  });
+
+  saveState();
+  refreshSocialSessions([user.username]);
+  res.json({
+    success: true,
+    social: serializeSocialState(user.username)
+  });
+});
+
+app.post('/api/register', async (req, res) => {
   const username = req.body.username?.trim();
+  const email = req.body.email?.trim();
   const password = req.body.password;
   const avatar = req.body.avatar;
 
-  if (!username || !password) {
-    return res.status(400).json({ error: 'Username and password required.' });
+  if (!username || !email || !password) {
+    return res.status(400).json({ error: 'Username, email, and password required.' });
   }
 
   if (!isValidUsername(username)) {
     return res.status(400).json({ error: 'Username 3-24 karakter olmali ve sadece harf, rakam, _, -, . icerebilir.' });
+  }
+
+  if (!isValidEmail(email)) {
+    return res.status(400).json({ error: 'Gecerli bir e-posta adresi gir.' });
+  }
+
+  if (String(password).length < 4) {
+    return res.status(400).json({ error: 'Sifre en az 4 karakter olmali.' });
   }
 
   if (RESERVED_USERNAMES.has(normalizeUsername(username))) {
@@ -1126,44 +1649,175 @@ app.post('/api/register', (req, res) => {
     return res.status(400).json({ error: 'Username already exists.' });
   }
 
+  if (getUserByEmail(email)) {
+    return res.status(400).json({ error: 'Bu e-posta zaten kullaniliyor.' });
+  }
+
+  pruneExpiredPendingRegistrations();
+  const existingPending = getPendingRegistration({ username, email });
+  const conflictingPending = state.pendingRegistrations.find((entry) => (
+    normalizeUsername(entry.username) === normalizeUsername(username)
+    || normalizeEmail(entry.email) === normalizeEmail(email)
+  ));
+
+  if (
+    conflictingPending
+    && (
+      normalizeUsername(conflictingPending.username) !== normalizeUsername(username)
+      || normalizeEmail(conflictingPending.email) !== normalizeEmail(email)
+    )
+  ) {
+    return res.status(400).json({ error: 'Bu kullanici adi veya e-posta icin bekleyen bir dogrulama var.' });
+  }
+
+  if (existingPending && existingPending.resendAvailableAt > now()) {
+    return res.status(429).json({
+      error: `Kodu tekrar gondermek icin ${Math.ceil((existingPending.resendAvailableAt - now()) / 1000)} saniye bekle.`
+    });
+  }
+
+  try {
+    const verificationCode = createVerificationCode();
+    await sendRegistrationCodeEmail({ email, username, code: verificationCode });
+    upsertPendingRegistration({ username, email, password, avatar, code: verificationCode });
+    saveState();
+    res.json({
+      success: true,
+      email: email,
+      maskedEmail: maskEmail(email),
+      expiresInMs: REGISTER_CODE_TTL_MS,
+      resendInMs: REGISTER_CODE_RESEND_MS
+    });
+  } catch (error) {
+    res.status(503).json({ error: error.message || 'Dogrulama kodu gonderilemedi.' });
+  }
+});
+
+app.post('/api/register/resend-code', async (req, res) => {
+  const username = req.body.username?.trim();
+  const email = req.body.email?.trim();
+  const pendingEntry = getPendingRegistration({ username, email });
+
+  if (!pendingEntry) {
+    return res.status(404).json({ error: 'Bekleyen kayit bulunamadi. Kayit formunu yeniden doldur.' });
+  }
+
+  if (pendingEntry.resendAvailableAt > now()) {
+    return res.status(429).json({
+      error: `Kodu tekrar gondermek icin ${Math.ceil((pendingEntry.resendAvailableAt - now()) / 1000)} saniye bekle.`
+    });
+  }
+
+  try {
+    const verificationCode = createVerificationCode();
+    await sendRegistrationCodeEmail({
+      email: pendingEntry.email,
+      username: pendingEntry.username,
+      code: verificationCode
+    });
+    upsertPendingRegistration({
+      username: pendingEntry.username,
+      email: pendingEntry.email,
+      password: pendingEntry.password,
+      avatar: pendingEntry.avatar,
+      code: verificationCode
+    });
+    saveState();
+    res.json({
+      success: true,
+      maskedEmail: maskEmail(pendingEntry.email),
+      expiresInMs: REGISTER_CODE_TTL_MS,
+      resendInMs: REGISTER_CODE_RESEND_MS
+    });
+  } catch (error) {
+    res.status(503).json({ error: error.message || 'Dogrulama kodu tekrar gonderilemedi.' });
+  }
+});
+
+app.post('/api/register/verify-code', (req, res) => {
+  const username = req.body.username?.trim();
+  const email = req.body.email?.trim();
+  const code = String(req.body.code || '').trim();
+  const pendingEntry = getPendingRegistration({ username, email });
+
+  if (!pendingEntry) {
+    return res.status(404).json({ error: 'Bekleyen kayit bulunamadi. Kayit adimini yeniden baslat.' });
+  }
+
+  if (!code) {
+    return res.status(400).json({ error: 'Dogrulama kodu gerekli.' });
+  }
+
+  if (pendingEntry.expiresAt <= now()) {
+    state.pendingRegistrations = state.pendingRegistrations.filter((entry) => entry !== pendingEntry);
+    saveState();
+    return res.status(400).json({ error: 'Dogrulama kodunun suresi doldu. Yeni kod iste.' });
+  }
+
+  if (pendingEntry.codeHash !== hashVerificationCode(code)) {
+    pendingEntry.attempts = Number(pendingEntry.attempts || 0) + 1;
+    if (pendingEntry.attempts >= REGISTER_MAX_VERIFY_ATTEMPTS) {
+      state.pendingRegistrations = state.pendingRegistrations.filter((entry) => entry !== pendingEntry);
+      saveState();
+      return res.status(400).json({ error: 'Cok fazla hatali deneme. Yeni kod iste.' });
+    }
+    saveState();
+    return res.status(400).json({ error: 'Dogrulama kodu hatali.' });
+  }
+
+  if (getUser(username)) {
+    state.pendingRegistrations = state.pendingRegistrations.filter((entry) => entry !== pendingEntry);
+    saveState();
+    return res.status(400).json({ error: 'Bu kullanici adi artik kullaniliyor. Farkli bir ad sec.' });
+  }
+
+  if (getUserByEmail(email)) {
+    state.pendingRegistrations = state.pendingRegistrations.filter((entry) => entry !== pendingEntry);
+    saveState();
+    return res.status(400).json({ error: 'Bu e-posta artik kullaniliyor. Farkli bir e-posta dene.' });
+  }
+
   const user = {
-    username,
-    password,
+    username: pendingEntry.username,
+    password: pendingEntry.password,
+    email: pendingEntry.email,
+    emailVerified: true,
     banned: false,
     mutedUntil: null,
     status: 'online',
-    avatar: avatar || null
+    avatar: pendingEntry.avatar || null
   };
 
   state.users.push(user);
-  state.presence[username] = {
+  state.pendingRegistrations = state.pendingRegistrations.filter((entry) => entry !== pendingEntry);
+  state.presence[user.username] = {
     status: 'online',
     currentServerId: state.servers[0]?.id || null,
     currentChannelId: state.servers[0]?.categories[0]?.channels[0]?.id || null,
     voiceChannelId: null,
     lastSeenAt: null
   };
-  ensureMemberships(username);
+  ensureMemberships(user.username);
   state.servers.forEach((serverItem) => {
     logAuditEvent({
       serverId: serverItem.id,
-      actor: username,
+      actor: user.username,
       action: 'member.registered',
       targetType: 'user',
-      targetId: username,
-      summary: `${username} sunucuya kaydoldu.`
+      targetId: user.username,
+      summary: `${user.username} sunucuya kaydoldu.`
     });
   });
   saveState();
   broadcastState();
   state.servers.forEach((serverItem) => broadcastServer(serverItem.id));
-  res.json({ success: true, username });
+  res.json({ success: true, username: user.username });
 });
 
 app.post('/api/login', (req, res) => {
   const username = req.body.username?.trim();
   const password = req.body.password;
-  const user = getUser(username);
+  const user = resolveLoginUser(username);
 
   if (!user || user.password !== password) {
     return res.status(401).json({ error: 'Invalid credentials.' });
@@ -1534,7 +2188,22 @@ function sendDmMessagesToUserSessions(username, peerUsername) {
   sendToUserSessions(username, {
     type: 'dmMessages',
     peerUsername,
-    messages: getDmMessages(username, peerUsername)
+    messages: canUsersDm(username, peerUsername) ? getDmMessages(username, peerUsername) : []
+  });
+}
+
+function sendSocialStateToUserSessions(username) {
+  sendToUserSessions(username, {
+    type: 'socialUpdated',
+    social: serializeSocialState(username),
+    directMessages: buildVisibleDms(username),
+    users: state.users.map(sanitizeUser)
+  });
+}
+
+function refreshSocialSessions(usernames = []) {
+  [...new Set(usernames.filter(Boolean))].forEach((username) => {
+    sendSocialStateToUserSessions(username);
   });
 }
 
@@ -1604,6 +2273,11 @@ wss.on('connection', (ws) => {
       if (!getUser(data.username) || !getUser(data.peerUsername)) {
         return;
       }
+      if (!canUsersDm(data.username, data.peerUsername)) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Bu kullanici ile DM iznin yok.' }));
+        refreshSocialSessions([data.username]);
+        return;
+      }
       if (markDmSeen(data.username, data.peerUsername)) {
         saveState();
       }
@@ -1614,6 +2288,9 @@ wss.on('connection', (ws) => {
 
     if (data.type === 'typing') {
       if (data.scope === 'dm') {
+        if (!canUsersDm(data.username, data.peerUsername)) {
+          return;
+        }
         const scopeKey = `dm:${getDmKey(data.username, data.peerUsername)}`;
         setTyping(scopeKey, data.username, Boolean(data.isTyping));
         broadcast('typingState', {
@@ -1793,6 +2470,11 @@ wss.on('connection', (ws) => {
       const text = typeof data.text === 'string' ? data.text.trim() : '';
       const attachments = sanitizeAttachments(data.attachments);
       if (!sender || !receiver || (!text && !attachments.length)) {
+        return;
+      }
+      if (!canUsersDm(sender.username, receiver.username)) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Bu kullaniciya DM gonderemiyorsun.' }));
+        refreshSocialSessions([sender.username]);
         return;
       }
 

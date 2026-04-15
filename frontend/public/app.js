@@ -1,6 +1,8 @@
 const API = {
   bootstrap: '/api/bootstrap',
   register: '/api/register',
+  verifyRegister: '/api/register/verify-code',
+  resendRegisterCode: '/api/register/resend-code',
   login: '/api/login',
   logout: '/api/logout',
   createServer: '/api/server',
@@ -15,13 +17,27 @@ const API = {
   invites: '/api/invites',
   createInvite: '/api/invite',
   redeemInvite: '/api/invite/redeem',
-  revokeInvite: '/api/invite/revoke'
+  revokeInvite: '/api/invite/revoke',
+  social: '/api/social',
+  friendRequest: '/api/friend-request',
+  respondFriendRequest: '/api/friend-request/respond',
+  removeFriend: '/api/friend/remove',
+  blockUser: '/api/friend/block',
+  privacy: '/api/privacy'
 };
 
 let ws = null;
 let currentUser = null;
 let appState = {
   meta: { persistence: 'file' },
+  social: {
+    privacy: { dmPolicy: 'everyone' },
+    blockedUsers: [],
+    blockedByUsers: [],
+    friends: [],
+    incomingRequests: [],
+    outgoingRequests: []
+  },
   servers: [],
   messages: {},
   directMessages: {},
@@ -52,6 +68,8 @@ const remoteStreams = new Map();
 let lastCallCapabilityMessage = '';
 let callOverlayOpen = false;
 let focusedCallTileKey = 'self';
+let pendingRegistration = null;
+let preferredLoginIdentifier = '';
 const makingOffer = new Map();
 const ignoredOffer = new Map();
 
@@ -181,6 +199,15 @@ function request(url, options = {}) {
       throw new Error(data.error || 'Request failed');
     }
     return data;
+  });
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('Dosya okunamadi.'));
+    reader.readAsDataURL(file);
   });
 }
 
@@ -2017,6 +2044,19 @@ function connectWS() {
       return;
     }
 
+    if (data.type === 'socialUpdated') {
+      appState.social = normalizeSocialState(data.social);
+      appState.users = data.users || appState.users;
+      appState.directMessages = data.directMessages || appState.directMessages;
+      if (activeDmUser && !hasDmAccess(activeDmUser)) {
+        activeDmUser = null;
+        activeConversationType = 'channel';
+        showToast('Bu DM artik kullanilamiyor.');
+      }
+      renderAll();
+      return;
+    }
+
     if (data.type === 'message') {
       const { channelId, message } = data;
       if (!appState.messages[channelId]) {
@@ -2158,6 +2198,7 @@ function connectWS() {
 async function bootstrap() {
   const data = await request(`${API.bootstrap}?username=${encodeURIComponent(currentUser)}`);
   appState = data;
+  appState.social = normalizeSocialState(data.social);
   currentUser = data.currentUser?.username || currentUser;
   unreadDmCounts = {};
   const initialServer = appState.servers[0] || null;
@@ -2174,15 +2215,20 @@ async function bootstrap() {
   connectWS();
 }
 
-function showLogin() {
+function showLogin(prefillIdentifier = preferredLoginIdentifier) {
   showModal(`
     <h2>Topluluk Sunucusu Giris</h2>
     <p class="modal-copy">Demo hesaplar: admin/123, moderator/123, student/123. Ayni hesap web ve mobilde ayni anda acik kalabilir.</p>
-    <input id="loginUser" class="modal-input" placeholder="Kullanici adi" />
+    <input id="loginUser" class="modal-input" placeholder="Kullanici adi veya e-posta" />
     <input id="loginPass" class="modal-input" type="password" placeholder="Sifre" />
     <button id="loginSubmit" class="modal-btn primary">Giris Yap</button>
     <button id="showRegister" class="modal-btn secondary">Kayit Ol</button>
   `);
+
+  const loginUserInput = document.getElementById('loginUser');
+  if (prefillIdentifier) {
+    loginUserInput.value = prefillIdentifier;
+  }
 
   document.getElementById('loginSubmit').onclick = async () => {
     const submitBtn = document.getElementById('loginSubmit');
@@ -2193,6 +2239,7 @@ function showLogin() {
       submitBtn.textContent = 'Yukleniyor...';
       const result = await request(API.login, { method: 'POST', body: JSON.stringify({ username, password }) });
       currentUser = result.username || username;
+      preferredLoginIdentifier = '';
       shouldReconnect = true;
       document.getElementById('appShell').classList.add('hidden');
       await bootstrap();
@@ -2204,55 +2251,125 @@ function showLogin() {
     }
   };
 
-  document.getElementById('showRegister').onclick = showRegister;
+  document.getElementById('showRegister').onclick = () => showRegister();
 }
 
-function showRegister() {
+function showRegisterVerification() {
+  if (!pendingRegistration) {
+    showRegister();
+    return;
+  }
+
   showModal(`
-    <h2>Yeni Uye</h2>
-    <p class="modal-copy">Kayit olan herkes mevcut sunuculara member olarak eklenir. Kullanici adlari tekildir ve 3-24 karakter arasinda olmalidir.</p>
-    <input id="regUser" class="modal-input" placeholder="Kullanici adi" />
-    <input id="regPass" class="modal-input" type="password" placeholder="Sifre" />
-    <input id="regAvatar" class="modal-input" type="file" accept="image/*" />
-    <button id="registerSubmit" class="modal-btn primary">Kayit Ol</button>
-    <button id="showLogin" class="modal-btn secondary">Geri Don</button>
+    <h2>E-posta Dogrulama</h2>
+    <p class="modal-copy">${pendingRegistration.maskedEmail || pendingRegistration.email} adresine 6 haneli bir kod gonderdik.</p>
+    <input id="regCode" class="modal-input" inputmode="numeric" maxlength="6" placeholder="Dogrulama kodu" />
+    <button id="verifyRegisterSubmit" class="modal-btn primary">Kodu Onayla</button>
+    <button id="resendRegisterCode" class="modal-btn secondary">Kodu Tekrar Gonder</button>
+    <button id="backToRegister" class="modal-btn secondary">Bilgileri Duzenle</button>
+    <button id="showLogin" class="modal-btn secondary">Giris Ekrani</button>
   `);
 
-  document.getElementById('registerSubmit').onclick = async () => {
+  document.getElementById('verifyRegisterSubmit').onclick = async () => {
+    const verifyBtn = document.getElementById('verifyRegisterSubmit');
     try {
-      const username = document.getElementById('regUser').value.trim();
-      const password = document.getElementById('regPass').value;
-      const file = document.getElementById('regAvatar').files?.[0];
-
-      const submitRegister = async (avatar = null) => {
-        await request(API.register, {
-          method: 'POST',
-          body: JSON.stringify({ username, password, avatar })
-        });
-        alert('Kayit tamam. Giris yapabilirsin.');
-        showLogin();
-      };
-
-      if (!file) {
-        await submitRegister(null);
-        return;
-      }
-
-      const reader = new FileReader();
-      reader.onload = async () => {
-        try {
-          await submitRegister(reader.result);
-        } catch (error) {
-          alert(error.message);
-        }
-      };
-      reader.readAsDataURL(file);
+      const code = document.getElementById('regCode').value.trim();
+      verifyBtn.disabled = true;
+      verifyBtn.textContent = 'Onaylaniyor...';
+      const result = await request(API.verifyRegister, {
+        method: 'POST',
+        body: JSON.stringify({
+          username: pendingRegistration.username,
+          email: pendingRegistration.email,
+          code
+        })
+      });
+      preferredLoginIdentifier = pendingRegistration.email || result.username || pendingRegistration.username;
+      pendingRegistration = null;
+      alert('Kayit tamamlandi. Artik giris yapabilirsin.');
+      showLogin(preferredLoginIdentifier);
     } catch (error) {
+      verifyBtn.disabled = false;
+      verifyBtn.textContent = 'Kodu Onayla';
       alert(error.message);
     }
   };
 
-  document.getElementById('showLogin').onclick = showLogin;
+  document.getElementById('resendRegisterCode').onclick = async () => {
+    const resendBtn = document.getElementById('resendRegisterCode');
+    try {
+      resendBtn.disabled = true;
+      resendBtn.textContent = 'Gonderiliyor...';
+      const result = await request(API.resendRegisterCode, {
+        method: 'POST',
+        body: JSON.stringify({
+          username: pendingRegistration.username,
+          email: pendingRegistration.email
+        })
+      });
+      pendingRegistration = {
+        ...pendingRegistration,
+        maskedEmail: result.maskedEmail || pendingRegistration.maskedEmail
+      };
+      alert(`Yeni kod ${pendingRegistration.maskedEmail || pendingRegistration.email} adresine gonderildi.`);
+      showRegisterVerification();
+    } catch (error) {
+      resendBtn.disabled = false;
+      resendBtn.textContent = 'Kodu Tekrar Gonder';
+      alert(error.message);
+    }
+  };
+
+  document.getElementById('backToRegister').onclick = () => showRegister({
+    username: pendingRegistration.username,
+    email: pendingRegistration.email
+  });
+  document.getElementById('showLogin').onclick = () => showLogin(pendingRegistration.email || pendingRegistration.username);
+}
+
+function showRegister(prefill = {}) {
+  showModal(`
+    <h2>Yeni Uye</h2>
+    <p class="modal-copy">Kayit icin e-posta adresine dogrulama kodu gonderilir. Kullanici adlari tekildir ve 3-24 karakter arasinda olmalidir.</p>
+    <input id="regUser" class="modal-input" placeholder="Kullanici adi" />
+    <input id="regEmail" class="modal-input" type="email" placeholder="E-posta adresi" />
+    <input id="regPass" class="modal-input" type="password" placeholder="Sifre" />
+    <input id="regAvatar" class="modal-input" type="file" accept="image/*" />
+    <button id="registerSubmit" class="modal-btn primary">Kodu Gonder</button>
+    <button id="showLogin" class="modal-btn secondary">Geri Don</button>
+  `);
+
+  document.getElementById('regUser').value = prefill.username || '';
+  document.getElementById('regEmail').value = prefill.email || '';
+
+  document.getElementById('registerSubmit').onclick = async () => {
+    const registerBtn = document.getElementById('registerSubmit');
+    try {
+      const username = document.getElementById('regUser').value.trim();
+      const email = document.getElementById('regEmail').value.trim();
+      const password = document.getElementById('regPass').value;
+      const file = document.getElementById('regAvatar').files?.[0];
+      registerBtn.disabled = true;
+      registerBtn.textContent = 'Kod Gonderiliyor...';
+      const avatar = file ? await readFileAsDataUrl(file) : null;
+      const result = await request(API.register, {
+        method: 'POST',
+        body: JSON.stringify({ username, email, password, avatar })
+      });
+      pendingRegistration = {
+        username,
+        email,
+        maskedEmail: result.maskedEmail || email
+      };
+      showRegisterVerification();
+    } catch (error) {
+      registerBtn.disabled = false;
+      registerBtn.textContent = 'Kodu Gonder';
+      alert(error.message);
+    }
+  };
+
+  document.getElementById('showLogin').onclick = () => showLogin();
 }
 
 function sendMessage() {
@@ -3658,3 +3775,719 @@ window.onload = () => {
     }
   });
 };
+
+function defaultSocialState() {
+  return {
+    privacy: { dmPolicy: 'everyone' },
+    blockedUsers: [],
+    blockedByUsers: [],
+    friends: [],
+    incomingRequests: [],
+    outgoingRequests: []
+  };
+}
+
+function normalizeSocialState(social = {}) {
+  return {
+    privacy: {
+      dmPolicy: social?.privacy?.dmPolicy === 'friends' ? 'friends' : 'everyone'
+    },
+    blockedUsers: Array.isArray(social?.blockedUsers) ? [...social.blockedUsers] : [],
+    blockedByUsers: Array.isArray(social?.blockedByUsers) ? [...social.blockedByUsers] : [],
+    friends: Array.isArray(social?.friends) ? [...social.friends] : [],
+    incomingRequests: Array.isArray(social?.incomingRequests) ? [...social.incomingRequests] : [],
+    outgoingRequests: Array.isArray(social?.outgoingRequests) ? [...social.outgoingRequests] : []
+  };
+}
+
+function getSocialState() {
+  appState.social = normalizeSocialState(appState.social);
+  return appState.social;
+}
+
+function getIncomingFriendRequest(username) {
+  return getSocialState().incomingRequests.find((item) => item.username === username) || null;
+}
+
+function getOutgoingFriendRequest(username) {
+  return getSocialState().outgoingRequests.find((item) => item.username === username) || null;
+}
+
+function isFriendUser(username) {
+  return getSocialState().friends.some((item) => item.username === username);
+}
+
+function isBlockedUser(username) {
+  return getSocialState().blockedUsers.includes(username);
+}
+
+function isBlockedByUser(username) {
+  return getSocialState().blockedByUsers.includes(username);
+}
+
+function hasDmAccess(username) {
+  return Boolean(
+    username
+    && !isBlockedUser(username)
+    && !isBlockedByUser(username)
+    && Object.prototype.hasOwnProperty.call(appState.directMessages || {}, username)
+  );
+}
+
+function sortUsersForSocialList(userA, userB) {
+  const aLast = getLastDmMessage(userA.username)?.time || 0;
+  const bLast = getLastDmMessage(userB.username)?.time || 0;
+  if (aLast !== bLast) {
+    return bLast - aLast;
+  }
+  return userA.username.localeCompare(userB.username, 'tr');
+}
+
+function getPreferredDmTarget() {
+  const users = appState.users
+    .filter((user) => user.username !== currentUser && hasDmAccess(user.username))
+    .sort(sortUsersForSocialList);
+  return users[0]?.username || null;
+}
+
+async function refreshSocialState(options = {}) {
+  try {
+    const data = await request(`${API.social}?username=${encodeURIComponent(currentUser)}`);
+    appState.social = normalizeSocialState(data.social);
+    appState.users = data.users || appState.users;
+    appState.directMessages = data.directMessages || appState.directMessages;
+    if (activeDmUser && !hasDmAccess(activeDmUser)) {
+      activeDmUser = null;
+      activeConversationType = 'channel';
+    }
+    renderAll();
+    return data;
+  } catch (error) {
+    if (!options.silent) {
+      alert(error.message);
+    }
+    throw error;
+  }
+}
+
+async function sendFriendRequestTo(username) {
+  await request(API.friendRequest, {
+    method: 'POST',
+    body: JSON.stringify({ from: currentUser, to: username })
+  });
+  await refreshSocialState({ silent: true });
+  showToast(`${username} icin arkadaslik istegi gonderildi.`);
+}
+
+async function respondToFriendRequest(fromUser, action) {
+  await request(API.respondFriendRequest, {
+    method: 'POST',
+    body: JSON.stringify({ username: currentUser, fromUser, action })
+  });
+  await refreshSocialState({ silent: true });
+  showToast(action === 'accept' ? 'Arkadaslik istegi kabul edildi.' : 'Arkadaslik istegi reddedildi.');
+}
+
+async function removeFriendship(targetUser) {
+  await request(API.removeFriend, {
+    method: 'POST',
+    body: JSON.stringify({ username: currentUser, targetUser })
+  });
+  await refreshSocialState({ silent: true });
+  showToast(`${targetUser} arkadas listesinden cikarildi.`);
+}
+
+async function toggleUserBlock(targetUser, blocked) {
+  await request(API.blockUser, {
+    method: 'POST',
+    body: JSON.stringify({ username: currentUser, targetUser, blocked })
+  });
+  await refreshSocialState({ silent: true });
+  showToast(blocked ? `${targetUser} engellendi.` : `${targetUser} engeli kaldirildi.`);
+}
+
+async function updateDmPrivacy(dmPolicy) {
+  await request(API.privacy, {
+    method: 'POST',
+    body: JSON.stringify({ username: currentUser, dmPolicy })
+  });
+  await refreshSocialState({ silent: true });
+  showToast(dmPolicy === 'friends' ? 'DM gizliligi arkadaslar ile sinirlandi.' : 'DM gizliligi herkese acildi.');
+}
+
+function buildSocialRowMarkup(username, options = {}) {
+  const user = getUserRecord(username) || { username, privacy: { dmPolicy: 'everyone' } };
+  const presence = appState.presence[username]?.status || user?.status || 'offline';
+  const lastSeenAt = appState.presence[username]?.lastSeenAt || user?.lastSeenAt || null;
+  const lastMessage = getLastDmMessage(username);
+  const preview = options.preview
+    || (lastMessage
+      ? `${lastMessage.user === currentUser ? 'Sen: ' : ''}${lastMessage.text || '[Ek]'}`
+      : 'Henuz direkt mesaj yok');
+  const secondary = options.secondary
+    || (presence === 'offline' && lastSeenAt
+      ? `Son gorulme ${formatLastSeen(lastSeenAt)}`
+      : formatPresenceLabel(presence));
+  const openMode = options.openMode || (hasDmAccess(username) ? 'dm' : 'profile');
+  const actionLabel = options.actionLabel || 'Profil';
+  const extraButtons = options.extraButtons || '';
+
+  return `
+    <div class="dm-row">
+      <button class="dm-user ${activeDmUser === username ? 'active' : ''}" data-username="${username}" data-open-mode="${openMode}">
+        <span class="dm-user-top">
+          <span class="dm-user-head">
+            ${avatarMarkup(username, 'member-avatar')}
+            <span class="dm-name-wrap">
+              <strong>${escapeHtml(username)}</strong>
+              <span class="report-meta">${escapeHtml(secondary)}</span>
+            </span>
+          </span>
+          <span class="dm-user-tail">
+            ${unreadDmCounts[username] ? `<span class="badge-dot">${unreadDmCounts[username]}</span>` : ''}
+            <span class="presence ${presence}">${formatPresenceLabel(presence)}</span>
+          </span>
+        </span>
+        <span class="dm-user-bottom">
+          <span class="dm-preview">${escapeHtml(preview)}</span>
+          <span class="report-meta">${lastMessage ? formatTime(lastMessage.time) : ''}</span>
+        </span>
+      </button>
+      <div class="member-actions">
+        <button class="mini-action-btn dm-profile-btn" data-username="${username}">${escapeHtml(actionLabel)}</button>
+        ${extraButtons}
+      </div>
+    </div>
+  `;
+}
+
+function buildSocialSectionMarkup(title, subtitle, body) {
+  if (!body) {
+    return '';
+  }
+  return `
+    <div class="report-card">
+      <strong>${escapeHtml(title)}</strong>
+      <div class="report-meta">${escapeHtml(subtitle)}</div>
+    </div>
+    ${body}
+  `;
+}
+
+function renderDmList() {
+  dmList.innerHTML = '';
+  const social = getSocialState();
+  const users = appState.users
+    .filter((user) => user.username !== currentUser)
+    .sort(sortUsersForSocialList);
+  const friendSet = new Set(social.friends.map((item) => item.username));
+  const incomingSet = new Set(social.incomingRequests.map((item) => item.username));
+  const outgoingSet = new Set(social.outgoingRequests.map((item) => item.username));
+  const blockedSet = new Set(social.blockedUsers);
+
+  const friendUsers = users.filter((user) => friendSet.has(user.username));
+  const incomingUsers = users.filter((user) => incomingSet.has(user.username) && !blockedSet.has(user.username));
+  const outgoingUsers = users.filter((user) => outgoingSet.has(user.username) && !blockedSet.has(user.username));
+  const discoverUsers = users.filter((user) => (
+    !friendSet.has(user.username)
+    && !incomingSet.has(user.username)
+    && !outgoingSet.has(user.username)
+    && !blockedSet.has(user.username)
+  ));
+
+  membersPanelTitle.textContent = 'Sosyal';
+  membersPanelSubtitle.textContent = `${social.friends.length} arkadas • ${social.incomingRequests.length} gelen istek`;
+  membersCountPill.textContent = String(social.friends.length + social.incomingRequests.length);
+
+  const sections = [];
+
+  if (friendUsers.length) {
+    sections.push(buildSocialSectionMarkup(
+      'Arkadaslar',
+      'DM acabilir veya profilden islemler yapabilirsin.',
+      friendUsers.map((user) => buildSocialRowMarkup(user.username, {
+        actionLabel: 'Profil'
+      })).join('')
+    ));
+  }
+
+  if (incomingUsers.length) {
+    sections.push(buildSocialSectionMarkup(
+      'Gelen Istekler',
+      'Istekleri kabul et veya reddet.',
+      incomingUsers.map((user) => buildSocialRowMarkup(user.username, {
+        preview: 'Sana arkadaslik istegi gonderdi.',
+        actionLabel: 'Kabul Et',
+        openMode: 'profile',
+        extraButtons: `
+          <button class="mini-action-btn" data-social-action="accept" data-username="${user.username}">Kabul</button>
+          <button class="mini-action-btn" data-social-action="decline" data-username="${user.username}">Reddet</button>
+        `
+      })).join('')
+    ));
+  }
+
+  if (outgoingUsers.length) {
+    sections.push(buildSocialSectionMarkup(
+      'Giden Istekler',
+      'Karsi tarafin cevabi bekleniyor.',
+      outgoingUsers.map((user) => buildSocialRowMarkup(user.username, {
+        preview: 'Arkadaslik istegin beklemede.',
+        actionLabel: 'Profil',
+        openMode: 'profile'
+      })).join('')
+    ));
+  }
+
+  if (discoverUsers.length) {
+    sections.push(buildSocialSectionMarkup(
+      'Kisiler',
+      'Profilden arkadas ekle veya uygun ise DM baslat.',
+      discoverUsers.map((user) => buildSocialRowMarkup(user.username, {
+        preview: user.privacy?.dmPolicy === 'friends'
+          ? 'Sadece arkadaslardan DM aliyor.'
+          : 'Profili acip arkadaslik veya DM baslatabilirsin.',
+        actionLabel: hasDmAccess(user.username) ? 'Profil' : 'Incele',
+        openMode: hasDmAccess(user.username) ? 'dm' : 'profile'
+      })).join('')
+    ));
+  }
+
+  if (!sections.length) {
+    dmList.innerHTML = '<div class="empty-state">Henuz sosyal liste olusmadi.</div>';
+    return;
+  }
+
+  dmList.innerHTML = sections.join('');
+
+  dmList.querySelectorAll('.dm-user').forEach((button) => {
+    button.onclick = () => {
+      if (button.dataset.openMode === 'dm' && hasDmAccess(button.dataset.username)) {
+        openDm(button.dataset.username);
+        return;
+      }
+      showUserProfile(button.dataset.username);
+    };
+    button.oncontextmenu = (event) => {
+      event.preventDefault();
+      showUserProfile(button.dataset.username);
+    };
+  });
+
+  dmList.querySelectorAll('.dm-profile-btn').forEach((button) => {
+    button.onclick = (event) => {
+      event.stopPropagation();
+      const username = button.dataset.username;
+      if (button.textContent.trim() === 'Kabul Et') {
+        respondToFriendRequest(username, 'accept').catch((error) => alert(error.message));
+        return;
+      }
+      showUserProfile(username);
+    };
+  });
+
+  dmList.querySelectorAll('[data-social-action]').forEach((button) => {
+    button.onclick = (event) => {
+      event.stopPropagation();
+      const username = button.dataset.username;
+      const action = button.dataset.socialAction;
+      if (action === 'accept') {
+        respondToFriendRequest(username, 'accept').catch((error) => alert(error.message));
+      } else if (action === 'decline') {
+        respondToFriendRequest(username, 'decline').catch((error) => alert(error.message));
+      }
+    };
+  });
+}
+
+function showUserProfile(username) {
+  const server = getCurrentServer();
+  const member = server?.members.find((item) => item.username === username);
+  const user = getUserRecord(username) || { username, privacy: { dmPolicy: 'everyone' } };
+  const presence = appState.presence[username]?.status || user?.status || 'offline';
+  const lastSeenAt = appState.presence[username]?.lastSeenAt || user?.lastSeenAt || null;
+  const dmCount = (appState.directMessages[username] || []).length;
+  const voiceEntry = Object.entries(appState.voicePresence).find(([, users]) => users.includes(username));
+  const voiceChannel = server?.categories.flatMap((category) => category.channels).find((channel) => channel.id === voiceEntry?.[0]);
+  const isSelf = username === currentUser;
+  const incomingRequest = getIncomingFriendRequest(username);
+  const outgoingRequest = getOutgoingFriendRequest(username);
+  const isFriend = isFriendUser(username);
+  const blocked = isBlockedUser(username);
+  const blockedBy = isBlockedByUser(username);
+  const dmAllowed = hasDmAccess(username);
+  const dmPolicy = isSelf ? getSocialState().privacy.dmPolicy : (user.privacy?.dmPolicy || 'everyone');
+
+  const socialSummary = isSelf
+    ? `Arkadas: ${getSocialState().friends.length} • Engellenen: ${getSocialState().blockedUsers.length}`
+    : blocked
+      ? 'Bu kullaniciyi engelledin.'
+      : blockedBy
+        ? 'Bu kullanici seninle DM paylasmiyor.'
+        : isFriend
+          ? 'Arkadas listende bulunuyor.'
+          : incomingRequest
+            ? 'Sana arkadaslik istegi gonderdi.'
+            : outgoingRequest
+              ? 'Arkadaslik istegin beklemede.'
+              : dmAllowed
+                ? 'DM acabilir veya arkadaslik istegi gonderebilirsin.'
+                : user.privacy?.dmPolicy === 'friends'
+                  ? 'Sadece arkadaslardan DM aliyor.'
+                  : 'Profili uzerinden sosyal islem yapabilirsin.';
+
+  showModal(`
+    <h2>${isSelf ? 'Profil Ayarlari' : 'Kullanici Profili'}</h2>
+    <div style="display:flex; justify-content:center; margin-bottom:4px;">${avatarMarkup(username, 'profile-avatar')}</div>
+    <div class="report-card">
+      <div><strong>${escapeHtml(username)}</strong></div>
+      <div class="report-meta">Durum: ${escapeHtml(presence)}</div>
+      <div class="report-meta">${presence === 'offline' && lastSeenAt ? `Son gorulme: ${formatLastSeen(lastSeenAt)}` : 'Su anda aktif gorunuyor.'}</div>
+      <div class="report-meta">Rol: ${escapeHtml((member?.role || 'member').toUpperCase())}</div>
+      <div class="report-meta">DM sayisi: ${dmCount}</div>
+      <div class="report-meta">Sesli oda: ${escapeHtml(voiceChannel?.name || 'yok')}</div>
+      <div class="report-meta">${escapeHtml(socialSummary)}</div>
+    </div>
+    ${isSelf ? `
+      <input id="avatarFileInput" type="file" accept="image/*" class="modal-input" />
+      <button id="saveAvatarBtn" class="modal-btn secondary">Profil Fotosu Yukle</button>
+      <label class="report-meta" for="profileDmPolicy" style="display:block; margin-top:10px;">DM Gizliligi</label>
+      <select id="profileDmPolicy" class="modal-input">
+        <option value="everyone" ${dmPolicy === 'everyone' ? 'selected' : ''}>Herkes DM atabilir</option>
+        <option value="friends" ${dmPolicy === 'friends' ? 'selected' : ''}>Sadece arkadaslar DM atabilir</option>
+      </select>
+      <button id="savePrivacyBtn" class="modal-btn primary">Gizliligi Kaydet</button>
+    ` : `
+      ${dmAllowed ? '<button id="profileDmBtn" class="modal-btn primary">DM Ac</button>' : ''}
+      ${!blocked && !blockedBy && !isFriend && !incomingRequest && !outgoingRequest ? '<button id="profileFriendBtn" class="modal-btn secondary">Arkadas Ekle</button>' : ''}
+      ${incomingRequest ? '<button id="profileAcceptFriendBtn" class="modal-btn primary">Istegi Kabul Et</button><button id="profileDeclineFriendBtn" class="modal-btn secondary">Reddet</button>' : ''}
+      ${outgoingRequest ? '<button class="modal-btn secondary" disabled>Istek Gonderildi</button>' : ''}
+      ${isFriend ? '<button id="profileRemoveFriendBtn" class="modal-btn secondary">Arkadastan Cikar</button>' : ''}
+      <button id="profileBlockBtn" class="modal-btn ${blocked ? 'secondary' : 'secondary'}">${blocked ? 'Engeli Kaldir' : 'Engelle'}</button>
+    `}
+  `);
+
+  if (document.getElementById('profileDmBtn')) {
+    document.getElementById('profileDmBtn').onclick = () => {
+      hideModal();
+      openDm(username);
+    };
+  }
+
+  if (isSelf) {
+    document.getElementById('saveAvatarBtn').onclick = async () => {
+      const file = document.getElementById('avatarFileInput').files?.[0];
+      if (!file) {
+        alert('Lutfen bir gorsel sec.');
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          await request(API.avatar, {
+            method: 'POST',
+            body: JSON.stringify({
+              username: currentUser,
+              avatar: reader.result
+            })
+          });
+          const targetUser = getUserRecord(currentUser);
+          if (targetUser) {
+            targetUser.avatar = reader.result;
+          }
+          hideModal();
+          renderAll();
+          showToast('Profil fotosu guncellendi.');
+        } catch (error) {
+          alert(error.message);
+        }
+      };
+      reader.readAsDataURL(file);
+    };
+
+    document.getElementById('savePrivacyBtn').onclick = async () => {
+      try {
+        await updateDmPrivacy(document.getElementById('profileDmPolicy').value);
+        showUserProfile(currentUser);
+      } catch (error) {
+        alert(error.message);
+      }
+    };
+    return;
+  }
+
+  if (document.getElementById('profileFriendBtn')) {
+    document.getElementById('profileFriendBtn').onclick = async () => {
+      try {
+        await sendFriendRequestTo(username);
+        showUserProfile(username);
+      } catch (error) {
+        alert(error.message);
+      }
+    };
+  }
+
+  if (document.getElementById('profileAcceptFriendBtn')) {
+    document.getElementById('profileAcceptFriendBtn').onclick = async () => {
+      try {
+        await respondToFriendRequest(username, 'accept');
+        showUserProfile(username);
+      } catch (error) {
+        alert(error.message);
+      }
+    };
+  }
+
+  if (document.getElementById('profileDeclineFriendBtn')) {
+    document.getElementById('profileDeclineFriendBtn').onclick = async () => {
+      try {
+        await respondToFriendRequest(username, 'decline');
+        showUserProfile(username);
+      } catch (error) {
+        alert(error.message);
+      }
+    };
+  }
+
+  if (document.getElementById('profileRemoveFriendBtn')) {
+    document.getElementById('profileRemoveFriendBtn').onclick = async () => {
+      try {
+        await removeFriendship(username);
+        showUserProfile(username);
+      } catch (error) {
+        alert(error.message);
+      }
+    };
+  }
+
+  if (document.getElementById('profileBlockBtn')) {
+    document.getElementById('profileBlockBtn').onclick = async () => {
+      try {
+        await toggleUserBlock(username, !blocked);
+        showUserProfile(username);
+      } catch (error) {
+        alert(error.message);
+      }
+    };
+  }
+}
+
+async function showUtilityHub() {
+  const server = getCurrentServer();
+  if (!server) {
+    return;
+  }
+
+  const canManage = ['admin', 'mod'].includes(myRole());
+  const social = getSocialState();
+  if (canManage) {
+    try {
+      const [auditData, inviteData] = await Promise.all([
+        request(`${API.audit}?serverId=${encodeURIComponent(server.id)}&username=${encodeURIComponent(currentUser)}&limit=18`),
+        request(`${API.invites}?serverId=${encodeURIComponent(server.id)}&username=${encodeURIComponent(currentUser)}&limit=12`)
+      ]);
+      server.auditLogs = auditData.auditLogs || [];
+      server.invites = inviteData.invites || [];
+    } catch {
+      // Keep last known data if utility refresh fails.
+    }
+  }
+
+  renderReports();
+  renderPolls();
+  renderPermissions();
+
+  const incomingMarkup = social.incomingRequests.length
+    ? social.incomingRequests.map((requestItem) => `
+        <div class="dm-row">
+          <div class="dm-user">
+            <span class="dm-user-top">
+              <span class="dm-user-head">
+                ${avatarMarkup(requestItem.username, 'member-avatar')}
+                <span class="dm-name-wrap">
+                  <strong>${escapeHtml(requestItem.username)}</strong>
+                  <span class="report-meta">Istek tarihi ${formatTime(requestItem.createdAt || Date.now())}</span>
+                </span>
+              </span>
+            </span>
+          </div>
+          <div class="member-actions">
+            <button class="mini-action-btn" data-utility-friend="accept" data-username="${requestItem.username}">Kabul</button>
+            <button class="mini-action-btn" data-utility-friend="decline" data-username="${requestItem.username}">Reddet</button>
+          </div>
+        </div>
+      `).join('')
+    : '<div class="empty-state">Bekleyen gelen istek yok.</div>';
+
+  const blockedMarkup = social.blockedUsers.length
+    ? social.blockedUsers.map((username) => `
+        <div class="dm-row">
+          <div class="dm-user">
+            <span class="dm-user-top">
+              <span class="dm-user-head">
+                ${avatarMarkup(username, 'member-avatar')}
+                <span class="dm-name-wrap">
+                  <strong>${escapeHtml(username)}</strong>
+                  <span class="report-meta">Engellenen kullanici</span>
+                </span>
+              </span>
+            </span>
+          </div>
+          <div class="member-actions">
+            <button class="mini-action-btn" data-unblock-user="${username}">Engeli Kaldir</button>
+          </div>
+        </div>
+      `).join('')
+    : '<div class="empty-state">Engellenen kullanici yok.</div>';
+
+  showModal(`
+    <h2>Sunucu Araclari</h2>
+    <div class="report-card">
+      <strong>Sosyal ve Gizlilik</strong>
+      <div class="report-meta">Arkadas: ${social.friends.length}</div>
+      <div class="report-meta">Gelen istek: ${social.incomingRequests.length}</div>
+      <div class="report-meta">Engellenen: ${social.blockedUsers.length}</div>
+    </div>
+    <label class="report-meta" for="utilityDmPolicy" style="display:block; margin-top:10px;">DM Gizliligi</label>
+    <select id="utilityDmPolicy" class="modal-input">
+      <option value="everyone" ${social.privacy.dmPolicy === 'everyone' ? 'selected' : ''}>Herkes DM atabilir</option>
+      <option value="friends" ${social.privacy.dmPolicy === 'friends' ? 'selected' : ''}>Sadece arkadaslar DM atabilir</option>
+    </select>
+    <button id="utilitySavePrivacyBtn" class="modal-btn primary">Gizliligi Kaydet</button>
+    <div class="report-card"><strong>Gelen Arkadaslik Istekleri</strong></div>
+    ${incomingMarkup}
+    <div class="report-card"><strong>Engellenen Kullanicilar</strong></div>
+    ${blockedMarkup}
+    <div class="report-card"><strong>Kalicilik</strong><div class="report-meta">Mod: ${escapeHtml(appState.meta?.persistence || 'file')}</div></div>
+    <div class="report-card"><strong>Raporlar</strong></div>
+    ${reportList.innerHTML}
+    <div class="report-card"><strong>Anketler</strong></div>
+    ${pollList.innerHTML}
+    <div class="report-card"><strong>Izin Matrisi</strong></div>
+    ${permissionsList.innerHTML}
+    <div class="report-card"><strong>Davet Linkleri</strong></div>
+    ${canManage ? renderInviteCards(server) : '<div class="empty-state">Davet linklerini yonetmek icin admin/mod olmalisin.</div>'}
+    <div class="report-card"><strong>Audit Log</strong></div>
+    ${canManage ? renderAuditCards(server) : '<div class="empty-state">Audit log sadece yonetici rolleri icin gorunur.</div>'}
+    <button id="utilityRedeemInviteBtn" class="modal-btn secondary">Davet Kodu Gir</button>
+    ${canManage ? '<button id="utilityCreateInviteBtn" class="modal-btn primary">Davet Linki Olustur</button>' : ''}
+    ${canManage ? '<button id="utilityRoleBtn" class="modal-btn secondary">Rol Yonetimi</button>' : ''}
+    ${canManage ? '<button id="utilityModBtn" class="modal-btn secondary">Moderasyon</button>' : ''}
+  `);
+
+  document.getElementById('utilitySavePrivacyBtn').onclick = async () => {
+    try {
+      await updateDmPrivacy(document.getElementById('utilityDmPolicy').value);
+      await showUtilityHub();
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+  document.getElementById('utilityRedeemInviteBtn').onclick = showRedeemInviteModal;
+  modal.querySelectorAll('[data-utility-friend]').forEach((button) => {
+    button.onclick = async () => {
+      try {
+        await respondToFriendRequest(button.dataset.username, button.dataset.utilityFriend);
+        await showUtilityHub();
+      } catch (error) {
+        alert(error.message);
+      }
+    };
+  });
+  modal.querySelectorAll('[data-unblock-user]').forEach((button) => {
+    button.onclick = async () => {
+      try {
+        await toggleUserBlock(button.dataset.unblockUser, false);
+        await showUtilityHub();
+      } catch (error) {
+        alert(error.message);
+      }
+    };
+  });
+
+  if (canManage) {
+    document.getElementById('utilityCreateInviteBtn').onclick = showCreateInviteModal;
+    document.getElementById('utilityRoleBtn').onclick = () => {
+      hideModal();
+      assignRole();
+    };
+    document.getElementById('utilityModBtn').onclick = () => {
+      hideModal();
+      moderateUser();
+    };
+    modal.querySelectorAll('[data-revoke-invite]').forEach((button) => {
+      button.onclick = () => revokeInvite(button.dataset.revokeInvite);
+    });
+  }
+}
+
+function openQuickActions() {
+  showModal(`
+    <h2>Hizli Islemler</h2>
+    <button id="quickAttach" class="modal-btn primary">Dosya / Gorsel Ekle</button>
+    <button id="quickSocial" class="modal-btn secondary">Sosyal ve Gizlilik</button>
+    <button id="quickRedeemInvite" class="modal-btn secondary">Davet Kodu Gir</button>
+    <button id="quickCreateChannel" class="modal-btn secondary">Kanal Ekle</button>
+    <button id="quickCreateCategory" class="modal-btn secondary">Kategori Ekle</button>
+    <button id="quickReport" class="modal-btn secondary">Rapor Olustur</button>
+  `);
+
+  document.getElementById('quickAttach').onclick = () => {
+    hideModal();
+    attachmentInput?.click();
+  };
+  document.getElementById('quickSocial').onclick = showUtilityHub;
+  document.getElementById('quickRedeemInvite').onclick = showRedeemInviteModal;
+  document.getElementById('quickCreateChannel').onclick = () => {
+    hideModal();
+    createChannel();
+  };
+  document.getElementById('quickCreateCategory').onclick = () => {
+    hideModal();
+    createCategory();
+  };
+  document.getElementById('quickReport').onclick = () => {
+    hideModal();
+    reportUser();
+  };
+}
+
+function openDm(username) {
+  if (!hasDmAccess(username)) {
+    showToast('Bu kullanici ile DM acmak icin once profilden uygun bir sosyal durum kur.');
+    showUserProfile(username);
+    return;
+  }
+
+  activeConversationType = 'dm';
+  activeSidebarTab = 'dm';
+  activeDmUser = username;
+  clearReplyTarget();
+  unreadDmCounts[username] = 0;
+  if (ws?.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({
+      type: 'openDm',
+      username: currentUser,
+      peerUsername: username
+    }));
+  }
+  syncMobileViewAfterSelection('chat');
+  renderAll();
+}
+
+window.addEventListener('load', () => {
+  dmTabBtn.onclick = () => {
+    activeSidebarTab = 'dm';
+    const preferredDm = activeDmUser && hasDmAccess(activeDmUser)
+      ? activeDmUser
+      : getPreferredDmTarget();
+    if (preferredDm) {
+      openDm(preferredDm);
+    } else {
+      renderAll();
+      showToast('Gorunur bir DM kisisi henuz yok.');
+    }
+  };
+  composerAddBtn.onclick = openQuickActions;
+});
