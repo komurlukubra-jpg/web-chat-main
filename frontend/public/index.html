@@ -3794,6 +3794,8 @@
       :root {
         --mobile-bottom-nav: calc(78px + env(safe-area-inset-bottom));
         --mobile-pane-pad: 14px;
+        --mobile-card-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.02));
+        --mobile-card-shadow: 0 14px 32px rgba(0, 0, 0, 0.18);
       }
 
       html,
@@ -3866,6 +3868,11 @@
         background: linear-gradient(180deg, rgba(255, 246, 251, 0.98), rgba(255, 246, 251, 0.94));
       }
 
+      body.light-mode {
+        --mobile-card-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.88));
+        --mobile-card-shadow: 0 14px 30px rgba(145, 76, 114, 0.1);
+      }
+
       .servers {
         align-items: stretch;
       }
@@ -3912,9 +3919,21 @@
         background: transparent;
       }
 
+      .channels .brand h1 {
+        font-size: 22px;
+        line-height: 1.05;
+      }
+
+      .channels .brand p {
+        margin-top: 0;
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
       .channels .action-grid {
         display: grid !important;
         padding: 0 var(--mobile-pane-pad);
+        gap: 8px;
       }
 
       #serverSummaryCard,
@@ -3923,6 +3942,9 @@
         display: grid !important;
         margin: 0 var(--mobile-pane-pad);
         border-radius: 18px;
+        background: var(--mobile-card-bg);
+        border: 1px solid var(--line-soft);
+        box-shadow: var(--mobile-card-shadow);
       }
 
       #channelTree {
@@ -3936,10 +3958,26 @@
 
       .channel-group-title {
         padding: 0 10px;
+        font-size: 11px;
       }
 
       .channel-item {
         padding: 12px 12px;
+        border-radius: 14px;
+        font-size: 15px;
+      }
+
+      .channel-item.active {
+        background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.28), rgba(var(--accent-rgb), 0.14));
+        box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.32);
+      }
+
+      .action-btn,
+      .voice-green,
+      .voice-red,
+      .warning-btn,
+      .logout-btn {
+        min-height: 46px;
         border-radius: 14px;
       }
 
@@ -3961,6 +3999,12 @@
         background: var(--panel-2);
       }
 
+      .member-tab {
+        min-height: 44px;
+        border-radius: 14px;
+        font-size: 13px;
+      }
+
       .sidebar-panel-main {
         flex: 1 1 auto;
         min-height: 0;
@@ -3971,6 +4015,14 @@
       #dmList {
         overflow: visible;
         padding-right: 0;
+      }
+
+      .member-row,
+      .dm-user {
+        background: var(--mobile-card-bg);
+        border: 1px solid var(--line-soft);
+        border-radius: 18px;
+        box-shadow: var(--mobile-card-shadow);
       }
 
       .workspace {
@@ -3985,11 +4037,44 @@
         top: 0;
         z-index: 25;
         padding: 12px var(--mobile-pane-pad);
+        min-height: 62px;
+        background: linear-gradient(180deg, rgba(37, 31, 40, 0.98), rgba(37, 31, 40, 0.92));
+        border-bottom: 1px solid var(--line-soft);
+        backdrop-filter: blur(14px);
+      }
+
+      body.light-mode .workspace-header {
+        background: linear-gradient(180deg, rgba(255, 246, 251, 0.98), rgba(255, 246, 251, 0.92));
+      }
+
+      #presenceSelect,
+      #searchBtn,
+      #pinBtn {
+        display: none !important;
+      }
+
+      .workspace-meta {
+        gap: 8px;
       }
 
       .chat-area {
         padding: 8px 0 14px;
         min-height: 0;
+      }
+
+      .message-row {
+        padding: 8px var(--mobile-pane-pad);
+      }
+
+      .message-avatar {
+        width: 38px;
+        height: 38px;
+        font-size: 14px;
+      }
+
+      .message-body {
+        font-size: 14px;
+        line-height: 1.42;
       }
 
       .composer {
@@ -4000,6 +4085,8 @@
         z-index: 21;
         padding: 10px var(--mobile-pane-pad) calc(14px + env(safe-area-inset-bottom));
         background: linear-gradient(180deg, rgba(49, 51, 56, 0.08), rgba(49, 51, 56, 0.96) 28%, #313338 58%);
+        border-top: 1px solid var(--line-soft);
+        backdrop-filter: blur(16px);
       }
 
       body.light-mode .composer {
@@ -4015,6 +4102,23 @@
         z-index: 40;
         padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
         border-radius: 20px;
+        border: 1px solid var(--line-soft);
+        background: rgba(31, 25, 35, 0.94);
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.24);
+        backdrop-filter: blur(18px);
+      }
+
+      body.light-mode .mobile-nav {
+        background: rgba(255, 249, 252, 0.94);
+      }
+
+      .mobile-nav-btn {
+        min-height: 50px;
+        border-radius: 16px;
+      }
+
+      .mobile-nav-btn.active {
+        background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.32), rgba(var(--accent-rgb), 0.18));
       }
     }
 
@@ -4039,6 +4143,10 @@
 
       .brand h1 {
         font-size: 17px;
+      }
+
+      .channels .brand h1 {
+        font-size: 20px;
       }
 
       .channel-item {
