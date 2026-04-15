@@ -18,21 +18,16 @@ const RESERVED_USERNAMES = new Set(['system', 'bot']);
 const ALLOWED_PRESENCE = new Set(['online', 'away', 'busy']);
 const DATABASE_URL = process.env.DATABASE_URL || '';
 const SNAPSHOT_ROW_ID = 'primary';
-const SMTP_HOST = process.env.SMTP_HOST || '';
-const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
-const SMTP_SECURE = String(process.env.SMTP_SECURE || '').toLowerCase() === 'true' || SMTP_PORT === 465;
-const SMTP_USER = process.env.SMTP_USER || '';
-const SMTP_PASS = process.env.SMTP_PASS || '';
-const MAIL_FROM = process.env.MAIL_FROM || SMTP_USER || '';
-const MAIL_FROM_NAME = process.env.MAIL_FROM_NAME || 'Web Chat Community';
+const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
+const RESEND_API_URL = process.env.RESEND_API_URL || 'https://api.resend.com/emails';
+const RESEND_REQUEST_TIMEOUT_MS = Number(process.env.RESEND_REQUEST_TIMEOUT_MS || 15_000);
+const MAIL_FROM = process.env.MAIL_FROM || process.env.RESEND_FROM || '';
+const MAIL_FROM_NAME = process.env.MAIL_FROM_NAME || process.env.RESEND_FROM_NAME || 'Web Chat Community';
 const REGISTER_CODE_TTL_MS = Number(process.env.REGISTER_CODE_TTL_MS || 10 * 60 * 1000);
 const REGISTER_CODE_RESEND_MS = Number(process.env.REGISTER_CODE_RESEND_MS || 60 * 1000);
 const REGISTER_MAX_VERIFY_ATTEMPTS = Number(process.env.REGISTER_MAX_VERIFY_ATTEMPTS || 5);
 
 app.use(express.json({ limit: '10mb' }));
-
-let mailTransport = null;
-let mailTransportKey = '';
 
 function uid(prefix) {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
@@ -73,52 +68,61 @@ function formatMailFrom() {
   return MAIL_FROM_NAME ? `"${MAIL_FROM_NAME}" <${MAIL_FROM}>` : MAIL_FROM;
 }
 
-function getMailTransport() {
-  if (!SMTP_HOST || !SMTP_PORT || !MAIL_FROM) {
-    return null;
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+async function sendTransactionalEmail(payload) {
+  if (!RESEND_API_KEY || !MAIL_FROM) {
+    throw new Error('Email service is not configured. Set RESEND_API_KEY and MAIL_FROM.');
   }
 
-  const configKey = JSON.stringify({
-    host: SMTP_HOST,
-    port: SMTP_PORT,
-    secure: SMTP_SECURE,
-    user: SMTP_USER,
-    from: MAIL_FROM
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), RESEND_REQUEST_TIMEOUT_MS);
 
-  if (mailTransport && mailTransportKey === configKey) {
-    return mailTransport;
+  try {
+    const response = await fetch(RESEND_API_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${RESEND_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
+
+    const result = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      const errorMessage =
+        result?.message
+        || result?.error?.message
+        || result?.error
+        || `Resend request failed (${response.status}).`;
+      throw new Error(errorMessage);
+    }
+
+    return result;
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      throw new Error('Mail servisine baglanti zaman asimina ugradi.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  const nodemailer = require('nodemailer');
-  const transportOptions = {
-    host: SMTP_HOST,
-    port: SMTP_PORT,
-    secure: SMTP_SECURE
-  };
-
-  if (SMTP_USER || SMTP_PASS) {
-    transportOptions.auth = {
-      user: SMTP_USER,
-      pass: SMTP_PASS
-    };
-  }
-
-  mailTransport = nodemailer.createTransport(transportOptions);
-  mailTransportKey = configKey;
-  return mailTransport;
 }
 
 async function sendRegistrationCodeEmail({ email, username, code }) {
-  const transport = getMailTransport();
-  if (!transport) {
-    throw new Error('Email service is not configured. Set SMTP_HOST, SMTP_PORT, and MAIL_FROM.');
-  }
-
   const expiresInMinutes = Math.max(1, Math.round(REGISTER_CODE_TTL_MS / 60_000));
-  await transport.sendMail({
+  await sendTransactionalEmail({
     from: formatMailFrom(),
-    to: email,
+    to: [email],
     subject: 'Kayit dogrulama kodun',
     text: [
       `Merhaba ${username},`,
@@ -131,9 +135,9 @@ async function sendRegistrationCodeEmail({ email, username, code }) {
     ].join('\n'),
     html: `
       <div style="font-family:Arial,sans-serif;line-height:1.5;color:#1f2328;">
-        <p>Merhaba <strong>${username}</strong>,</p>
+        <p>Merhaba <strong>${escapeHtml(username)}</strong>,</p>
         <p>Web Chat Community kaydini tamamlamak icin asagidaki kodu kullan:</p>
-        <div style="font-size:28px;font-weight:700;letter-spacing:6px;margin:16px 0;">${code}</div>
+        <div style="font-size:28px;font-weight:700;letter-spacing:6px;margin:16px 0;">${escapeHtml(code)}</div>
         <p>Kod <strong>${expiresInMinutes} dakika</strong> icinde gecersiz olacak.</p>
         <p>Bu islemi sen baslatmadiysan bu maili yok sayabilirsin.</p>
       </div>
