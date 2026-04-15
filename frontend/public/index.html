@@ -206,11 +206,13 @@
       border-right: 1px solid var(--line);
       background: linear-gradient(180deg, rgba(var(--accent-rgb), 0.09), transparent 120px), var(--panel-2);
       display: grid;
-      grid-template-rows: auto auto auto auto minmax(0, 1fr) auto auto;
+      grid-template-rows: auto auto auto auto auto auto auto;
       gap: 12px;
       padding: 0 0 12px;
-      align-content: stretch;
-      overflow: hidden;
+      align-content: start;
+      overflow-y: auto;
+      overflow-x: hidden;
+      scrollbar-gutter: stable;
     }
 
     .channels > * {
@@ -925,9 +927,9 @@
     }
 
     #channelTree {
-      flex: 1 1 auto;
       grid-row: auto;
       padding: 0 10px 4px;
+      overflow: visible;
     }
 
     #memberList,
@@ -1610,14 +1612,6 @@
         padding: 8px 10px;
         font-size: 12px;
       }
-
-      #voiceShortcutCard {
-        max-height: 150px;
-      }
-
-      #accountCard {
-        max-height: 152px;
-      }
     }
 
     @media (max-height: 760px) {
@@ -1625,14 +1619,6 @@
       #accountCard {
         padding: 7px 9px;
         gap: 6px;
-      }
-
-      #voiceShortcutCard {
-        max-height: 128px;
-      }
-
-      #accountCard {
-        max-height: 132px;
       }
 
       #voicePanel,
@@ -1643,11 +1629,6 @@
       .voice-members {
         max-height: 42px;
         padding-right: 2px;
-      }
-
-      #accountCard .panel-subtitle,
-      .voice-subtitle {
-        max-height: 1.35em;
       }
 
       .voice-actions,
@@ -1666,19 +1647,6 @@
     }
 
     @media (max-height: 700px) {
-      #voiceShortcutCard,
-      #accountCard {
-        overflow-y: auto;
-      }
-
-      #voiceShortcutCard {
-        max-height: 112px;
-      }
-
-      #accountCard {
-        max-height: 118px;
-      }
-
       .voice-name {
         font-size: 14px;
       }
