@@ -1,5 +1,4 @@
 const express = require('express');
-const crypto = require('crypto');
 const fs = require('fs');
 const http = require('http');
 const os = require('os');
@@ -18,14 +17,6 @@ const RESERVED_USERNAMES = new Set(['system', 'bot']);
 const ALLOWED_PRESENCE = new Set(['online', 'away', 'busy']);
 const DATABASE_URL = process.env.DATABASE_URL || '';
 const SNAPSHOT_ROW_ID = 'primary';
-const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
-const RESEND_API_URL = process.env.RESEND_API_URL || 'https://api.resend.com/emails';
-const RESEND_REQUEST_TIMEOUT_MS = Number(process.env.RESEND_REQUEST_TIMEOUT_MS || 15_000);
-const MAIL_FROM = process.env.MAIL_FROM || process.env.RESEND_FROM || '';
-const MAIL_FROM_NAME = process.env.MAIL_FROM_NAME || process.env.RESEND_FROM_NAME || 'Web Chat Community';
-const REGISTER_CODE_TTL_MS = Number(process.env.REGISTER_CODE_TTL_MS || 10 * 60 * 1000);
-const REGISTER_CODE_RESEND_MS = Number(process.env.REGISTER_CODE_RESEND_MS || 60 * 1000);
-const REGISTER_MAX_VERIFY_ATTEMPTS = Number(process.env.REGISTER_MAX_VERIFY_ATTEMPTS || 5);
 
 app.use(express.json({ limit: '10mb' }));
 
@@ -53,108 +44,6 @@ function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || '').trim());
 }
 
-function hashVerificationCode(code) {
-  return crypto.createHash('sha256').update(String(code)).digest('hex');
-}
-
-function createVerificationCode() {
-  return String(Math.floor(100000 + Math.random() * 900000));
-}
-
-function formatMailFrom() {
-  if (!MAIL_FROM) {
-    return '';
-  }
-  return MAIL_FROM_NAME ? `"${MAIL_FROM_NAME}" <${MAIL_FROM}>` : MAIL_FROM;
-}
-
-function escapeHtml(value) {
-  return String(value || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-async function sendTransactionalEmail(payload) {
-  if (!RESEND_API_KEY || !MAIL_FROM) {
-    throw new Error('Email service is not configured. Set RESEND_API_KEY and MAIL_FROM.');
-  }
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), RESEND_REQUEST_TIMEOUT_MS);
-
-  try {
-    const response = await fetch(RESEND_API_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${RESEND_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload),
-      signal: controller.signal
-    });
-
-    const result = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      const errorMessage =
-        result?.message
-        || result?.error?.message
-        || result?.error
-        || `Resend request failed (${response.status}).`;
-      throw new Error(errorMessage);
-    }
-
-    return result;
-  } catch (error) {
-    if (error.name === 'AbortError') {
-      throw new Error('Mail servisine baglanti zaman asimina ugradi.');
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
-async function sendRegistrationCodeEmail({ email, username, code }) {
-  const expiresInMinutes = Math.max(1, Math.round(REGISTER_CODE_TTL_MS / 60_000));
-  await sendTransactionalEmail({
-    from: formatMailFrom(),
-    to: [email],
-    subject: 'Kayit dogrulama kodun',
-    text: [
-      `Merhaba ${username},`,
-      '',
-      'Web Chat Community kaydini tamamlamak icin asagidaki kodu kullan:',
-      code,
-      '',
-      `Kod ${expiresInMinutes} dakika icinde gecersiz olacak.`,
-      'Bu islemi sen baslatmadiysan bu maili yok sayabilirsin.'
-    ].join('\n'),
-    html: `
-      <div style="font-family:Arial,sans-serif;line-height:1.5;color:#1f2328;">
-        <p>Merhaba <strong>${escapeHtml(username)}</strong>,</p>
-        <p>Web Chat Community kaydini tamamlamak icin asagidaki kodu kullan:</p>
-        <div style="font-size:28px;font-weight:700;letter-spacing:6px;margin:16px 0;">${escapeHtml(code)}</div>
-        <p>Kod <strong>${expiresInMinutes} dakika</strong> icinde gecersiz olacak.</p>
-        <p>Bu islemi sen baslatmadiysan bu maili yok sayabilirsin.</p>
-      </div>
-    `
-  });
-}
-
-function maskEmail(email) {
-  const trimmed = String(email || '').trim();
-  const [localPart, domain = ''] = trimmed.split('@');
-  if (!localPart || !domain) {
-    return trimmed;
-  }
-  const visible = localPart.length <= 2 ? localPart[0] || '*' : `${localPart[0]}${'*'.repeat(Math.max(1, localPart.length - 2))}${localPart.slice(-1)}`;
-  return `${visible}@${domain}`;
-}
-
 function ensureDataDir() {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -175,7 +64,6 @@ function defaultState() {
       { username: 'moderator', password: '123', email: null, emailVerified: false, banned: false, mutedUntil: null, status: 'away' },
       { username: 'student', password: '123', email: null, emailVerified: false, banned: false, mutedUntil: null, status: 'online' }
     ],
-    pendingRegistrations: [],
     friendships: [],
     friendRequests: [],
     blocks: {},
@@ -260,7 +148,6 @@ function normalizeState(loadedState) {
   const nextState = loadedState || {};
 
   nextState.users = Array.isArray(nextState.users) ? nextState.users : [];
-  nextState.pendingRegistrations = Array.isArray(nextState.pendingRegistrations) ? nextState.pendingRegistrations : [];
   nextState.friendships = Array.isArray(nextState.friendships) ? nextState.friendships : [];
   nextState.friendRequests = Array.isArray(nextState.friendRequests) ? nextState.friendRequests : [];
   nextState.blocks = nextState.blocks && typeof nextState.blocks === 'object' ? nextState.blocks : {};
@@ -315,20 +202,6 @@ function normalizeState(loadedState) {
       ...message
     }));
   });
-
-  nextState.pendingRegistrations = nextState.pendingRegistrations
-    .map((entry) => ({
-      username: String(entry.username || '').trim(),
-      email: String(entry.email || '').trim(),
-      password: String(entry.password || ''),
-      avatar: entry.avatar || null,
-      codeHash: String(entry.codeHash || ''),
-      expiresAt: Number(entry.expiresAt || 0),
-      resendAvailableAt: Number(entry.resendAvailableAt || 0),
-      requestedAt: Number(entry.requestedAt || 0),
-      attempts: Number(entry.attempts || 0)
-    }))
-    .filter((entry) => entry.username && entry.email && entry.password && entry.codeHash && entry.expiresAt > now());
 
   return nextState;
 }
@@ -615,51 +488,6 @@ function getUserByEmail(email) {
 
 function resolveLoginUser(identifier) {
   return getUser(identifier) || getUserByEmail(identifier) || null;
-}
-
-function pruneExpiredPendingRegistrations() {
-  const currentTime = now();
-  const before = state.pendingRegistrations.length;
-  state.pendingRegistrations = state.pendingRegistrations.filter((entry) => entry.expiresAt > currentTime);
-  return before !== state.pendingRegistrations.length;
-}
-
-function getPendingRegistration({ username, email }) {
-  pruneExpiredPendingRegistrations();
-  const normalizedUsername = normalizeUsername(username);
-  const normalizedEmail = normalizeEmail(email);
-  return state.pendingRegistrations.find((entry) => (
-    normalizeUsername(entry.username) === normalizedUsername
-    && normalizeEmail(entry.email) === normalizedEmail
-  )) || null;
-}
-
-function upsertPendingRegistration({ username, email, password, avatar, code }) {
-  const currentTime = now();
-  const pendingEntry = {
-    username: String(username || '').trim(),
-    email: String(email || '').trim(),
-    password: String(password || ''),
-    avatar: avatar || null,
-    codeHash: hashVerificationCode(code),
-    expiresAt: currentTime + REGISTER_CODE_TTL_MS,
-    resendAvailableAt: currentTime + REGISTER_CODE_RESEND_MS,
-    requestedAt: currentTime,
-    attempts: 0
-  };
-
-  const existingIndex = state.pendingRegistrations.findIndex((entry) => (
-    normalizeUsername(entry.username) === normalizeUsername(pendingEntry.username)
-    || normalizeEmail(entry.email) === normalizeEmail(pendingEntry.email)
-  ));
-
-  if (existingIndex >= 0) {
-    state.pendingRegistrations[existingIndex] = pendingEntry;
-  } else {
-    state.pendingRegistrations.push(pendingEntry);
-  }
-
-  return pendingEntry;
 }
 
 function ensurePresenceEntry(username) {
@@ -1657,143 +1485,18 @@ app.post('/api/register', async (req, res) => {
     return res.status(400).json({ error: 'Bu e-posta zaten kullaniliyor.' });
   }
 
-  pruneExpiredPendingRegistrations();
-  const existingPending = getPendingRegistration({ username, email });
-  const conflictingPending = state.pendingRegistrations.find((entry) => (
-    normalizeUsername(entry.username) === normalizeUsername(username)
-    || normalizeEmail(entry.email) === normalizeEmail(email)
-  ));
-
-  if (
-    conflictingPending
-    && (
-      normalizeUsername(conflictingPending.username) !== normalizeUsername(username)
-      || normalizeEmail(conflictingPending.email) !== normalizeEmail(email)
-    )
-  ) {
-    return res.status(400).json({ error: 'Bu kullanici adi veya e-posta icin bekleyen bir dogrulama var.' });
-  }
-
-  if (existingPending && existingPending.resendAvailableAt > now()) {
-    return res.status(429).json({
-      error: `Kodu tekrar gondermek icin ${Math.ceil((existingPending.resendAvailableAt - now()) / 1000)} saniye bekle.`
-    });
-  }
-
-  try {
-    const verificationCode = createVerificationCode();
-    await sendRegistrationCodeEmail({ email, username, code: verificationCode });
-    upsertPendingRegistration({ username, email, password, avatar, code: verificationCode });
-    saveState();
-    res.json({
-      success: true,
-      email: email,
-      maskedEmail: maskEmail(email),
-      expiresInMs: REGISTER_CODE_TTL_MS,
-      resendInMs: REGISTER_CODE_RESEND_MS
-    });
-  } catch (error) {
-    res.status(503).json({ error: error.message || 'Dogrulama kodu gonderilemedi.' });
-  }
-});
-
-app.post('/api/register/resend-code', async (req, res) => {
-  const username = req.body.username?.trim();
-  const email = req.body.email?.trim();
-  const pendingEntry = getPendingRegistration({ username, email });
-
-  if (!pendingEntry) {
-    return res.status(404).json({ error: 'Bekleyen kayit bulunamadi. Kayit formunu yeniden doldur.' });
-  }
-
-  if (pendingEntry.resendAvailableAt > now()) {
-    return res.status(429).json({
-      error: `Kodu tekrar gondermek icin ${Math.ceil((pendingEntry.resendAvailableAt - now()) / 1000)} saniye bekle.`
-    });
-  }
-
-  try {
-    const verificationCode = createVerificationCode();
-    await sendRegistrationCodeEmail({
-      email: pendingEntry.email,
-      username: pendingEntry.username,
-      code: verificationCode
-    });
-    upsertPendingRegistration({
-      username: pendingEntry.username,
-      email: pendingEntry.email,
-      password: pendingEntry.password,
-      avatar: pendingEntry.avatar,
-      code: verificationCode
-    });
-    saveState();
-    res.json({
-      success: true,
-      maskedEmail: maskEmail(pendingEntry.email),
-      expiresInMs: REGISTER_CODE_TTL_MS,
-      resendInMs: REGISTER_CODE_RESEND_MS
-    });
-  } catch (error) {
-    res.status(503).json({ error: error.message || 'Dogrulama kodu tekrar gonderilemedi.' });
-  }
-});
-
-app.post('/api/register/verify-code', (req, res) => {
-  const username = req.body.username?.trim();
-  const email = req.body.email?.trim();
-  const code = String(req.body.code || '').trim();
-  const pendingEntry = getPendingRegistration({ username, email });
-
-  if (!pendingEntry) {
-    return res.status(404).json({ error: 'Bekleyen kayit bulunamadi. Kayit adimini yeniden baslat.' });
-  }
-
-  if (!code) {
-    return res.status(400).json({ error: 'Dogrulama kodu gerekli.' });
-  }
-
-  if (pendingEntry.expiresAt <= now()) {
-    state.pendingRegistrations = state.pendingRegistrations.filter((entry) => entry !== pendingEntry);
-    saveState();
-    return res.status(400).json({ error: 'Dogrulama kodunun suresi doldu. Yeni kod iste.' });
-  }
-
-  if (pendingEntry.codeHash !== hashVerificationCode(code)) {
-    pendingEntry.attempts = Number(pendingEntry.attempts || 0) + 1;
-    if (pendingEntry.attempts >= REGISTER_MAX_VERIFY_ATTEMPTS) {
-      state.pendingRegistrations = state.pendingRegistrations.filter((entry) => entry !== pendingEntry);
-      saveState();
-      return res.status(400).json({ error: 'Cok fazla hatali deneme. Yeni kod iste.' });
-    }
-    saveState();
-    return res.status(400).json({ error: 'Dogrulama kodu hatali.' });
-  }
-
-  if (getUser(username)) {
-    state.pendingRegistrations = state.pendingRegistrations.filter((entry) => entry !== pendingEntry);
-    saveState();
-    return res.status(400).json({ error: 'Bu kullanici adi artik kullaniliyor. Farkli bir ad sec.' });
-  }
-
-  if (getUserByEmail(email)) {
-    state.pendingRegistrations = state.pendingRegistrations.filter((entry) => entry !== pendingEntry);
-    saveState();
-    return res.status(400).json({ error: 'Bu e-posta artik kullaniliyor. Farkli bir e-posta dene.' });
-  }
-
   const user = {
-    username: pendingEntry.username,
-    password: pendingEntry.password,
-    email: pendingEntry.email,
-    emailVerified: true,
+    username,
+    password,
+    email,
+    emailVerified: false,
     banned: false,
     mutedUntil: null,
     status: 'online',
-    avatar: pendingEntry.avatar || null
+    avatar: avatar || null
   };
 
   state.users.push(user);
-  state.pendingRegistrations = state.pendingRegistrations.filter((entry) => entry !== pendingEntry);
   state.presence[user.username] = {
     status: 'online',
     currentServerId: state.servers[0]?.id || null,

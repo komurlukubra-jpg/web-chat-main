@@ -1,8 +1,6 @@
 const API = {
   bootstrap: '/api/bootstrap',
   register: '/api/register',
-  verifyRegister: '/api/register/verify-code',
-  resendRegisterCode: '/api/register/resend-code',
   login: '/api/login',
   logout: '/api/logout',
   createServer: '/api/server',
@@ -68,7 +66,6 @@ const remoteStreams = new Map();
 let lastCallCapabilityMessage = '';
 let callOverlayOpen = false;
 let focusedCallTileKey = 'self';
-let pendingRegistration = null;
 let preferredLoginIdentifier = '';
 const makingOffer = new Map();
 const ignoredOffer = new Map();
@@ -2254,88 +2251,15 @@ function showLogin(prefillIdentifier = preferredLoginIdentifier) {
   document.getElementById('showRegister').onclick = () => showRegister();
 }
 
-function showRegisterVerification() {
-  if (!pendingRegistration) {
-    showRegister();
-    return;
-  }
-
-  showModal(`
-    <h2>E-posta Dogrulama</h2>
-    <p class="modal-copy">${pendingRegistration.maskedEmail || pendingRegistration.email} adresine 6 haneli bir kod gonderdik.</p>
-    <input id="regCode" class="modal-input" inputmode="numeric" maxlength="6" placeholder="Dogrulama kodu" />
-    <button id="verifyRegisterSubmit" class="modal-btn primary">Kodu Onayla</button>
-    <button id="resendRegisterCode" class="modal-btn secondary">Kodu Tekrar Gonder</button>
-    <button id="backToRegister" class="modal-btn secondary">Bilgileri Duzenle</button>
-    <button id="showLogin" class="modal-btn secondary">Giris Ekrani</button>
-  `);
-
-  document.getElementById('verifyRegisterSubmit').onclick = async () => {
-    const verifyBtn = document.getElementById('verifyRegisterSubmit');
-    try {
-      const code = document.getElementById('regCode').value.trim();
-      verifyBtn.disabled = true;
-      verifyBtn.textContent = 'Onaylaniyor...';
-      const result = await request(API.verifyRegister, {
-        method: 'POST',
-        body: JSON.stringify({
-          username: pendingRegistration.username,
-          email: pendingRegistration.email,
-          code
-        })
-      });
-      preferredLoginIdentifier = pendingRegistration.email || result.username || pendingRegistration.username;
-      pendingRegistration = null;
-      alert('Kayit tamamlandi. Artik giris yapabilirsin.');
-      showLogin(preferredLoginIdentifier);
-    } catch (error) {
-      verifyBtn.disabled = false;
-      verifyBtn.textContent = 'Kodu Onayla';
-      alert(error.message);
-    }
-  };
-
-  document.getElementById('resendRegisterCode').onclick = async () => {
-    const resendBtn = document.getElementById('resendRegisterCode');
-    try {
-      resendBtn.disabled = true;
-      resendBtn.textContent = 'Gonderiliyor...';
-      const result = await request(API.resendRegisterCode, {
-        method: 'POST',
-        body: JSON.stringify({
-          username: pendingRegistration.username,
-          email: pendingRegistration.email
-        })
-      });
-      pendingRegistration = {
-        ...pendingRegistration,
-        maskedEmail: result.maskedEmail || pendingRegistration.maskedEmail
-      };
-      alert(`Yeni kod ${pendingRegistration.maskedEmail || pendingRegistration.email} adresine gonderildi.`);
-      showRegisterVerification();
-    } catch (error) {
-      resendBtn.disabled = false;
-      resendBtn.textContent = 'Kodu Tekrar Gonder';
-      alert(error.message);
-    }
-  };
-
-  document.getElementById('backToRegister').onclick = () => showRegister({
-    username: pendingRegistration.username,
-    email: pendingRegistration.email
-  });
-  document.getElementById('showLogin').onclick = () => showLogin(pendingRegistration.email || pendingRegistration.username);
-}
-
 function showRegister(prefill = {}) {
   showModal(`
     <h2>Yeni Uye</h2>
-    <p class="modal-copy">Kayit icin e-posta adresine dogrulama kodu gonderilir. Kullanici adlari tekildir ve 3-24 karakter arasinda olmalidir.</p>
+    <p class="modal-copy">Kullanici adlari tekildir ve 3-24 karakter arasinda olmalidir.</p>
     <input id="regUser" class="modal-input" placeholder="Kullanici adi" />
     <input id="regEmail" class="modal-input" type="email" placeholder="E-posta adresi" />
     <input id="regPass" class="modal-input" type="password" placeholder="Sifre" />
     <input id="regAvatar" class="modal-input" type="file" accept="image/*" />
-    <button id="registerSubmit" class="modal-btn primary">Kodu Gonder</button>
+    <button id="registerSubmit" class="modal-btn primary">Kayit Ol</button>
     <button id="showLogin" class="modal-btn secondary">Geri Don</button>
   `);
 
@@ -2350,21 +2274,18 @@ function showRegister(prefill = {}) {
       const password = document.getElementById('regPass').value;
       const file = document.getElementById('regAvatar').files?.[0];
       registerBtn.disabled = true;
-      registerBtn.textContent = 'Kod Gonderiliyor...';
+      registerBtn.textContent = 'Kaydediliyor...';
       const avatar = file ? await readFileAsDataUrl(file) : null;
       const result = await request(API.register, {
         method: 'POST',
         body: JSON.stringify({ username, email, password, avatar })
       });
-      pendingRegistration = {
-        username,
-        email,
-        maskedEmail: result.maskedEmail || email
-      };
-      showRegisterVerification();
+      preferredLoginIdentifier = email || result.username || username;
+      alert('Kayit tamamlandi. Artik giris yapabilirsin.');
+      showLogin(preferredLoginIdentifier);
     } catch (error) {
       registerBtn.disabled = false;
-      registerBtn.textContent = 'Kodu Gonder';
+      registerBtn.textContent = 'Kayit Ol';
       alert(error.message);
     }
   };
