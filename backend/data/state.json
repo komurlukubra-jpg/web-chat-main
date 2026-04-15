@@ -113,6 +113,22 @@
       "mutedUntil": null,
       "status": "online",
       "avatar": null
+    },
+    {
+      "username": "socialspeca",
+      "password": "123",
+      "banned": false,
+      "mutedUntil": null,
+      "status": "online",
+      "avatar": null
+    },
+    {
+      "username": "socialspecb",
+      "password": "123",
+      "banned": false,
+      "mutedUntil": null,
+      "status": "online",
+      "avatar": null
     }
   ],
   "servers": [
@@ -182,6 +198,14 @@
         },
         {
           "username": "kübra1234",
+          "role": "member"
+        },
+        {
+          "username": "socialspeca",
+          "role": "member"
+        },
+        {
+          "username": "socialspecb",
           "role": "member"
         }
       ],
@@ -302,6 +326,14 @@
         {
           "username": "kübra1234",
           "role": "member"
+        },
+        {
+          "username": "socialspeca",
+          "role": "member"
+        },
+        {
+          "username": "socialspecb",
+          "role": "member"
         }
       ],
       "categories": [
@@ -386,6 +418,14 @@
         {
           "username": "kübra1234",
           "role": "member"
+        },
+        {
+          "username": "socialspeca",
+          "role": "member"
+        },
+        {
+          "username": "socialspecb",
+          "role": "member"
         }
       ],
       "categories": [
@@ -449,6 +489,14 @@
         },
         {
           "username": "kübra1234",
+          "role": "member"
+        },
+        {
+          "username": "socialspeca",
+          "role": "member"
+        },
+        {
+          "username": "socialspecb",
           "role": "member"
         }
       ],
@@ -514,6 +562,14 @@
         {
           "username": "kübra1234",
           "role": "member"
+        },
+        {
+          "username": "socialspeca",
+          "role": "member"
+        },
+        {
+          "username": "socialspecb",
+          "role": "member"
         }
       ],
       "categories": [
@@ -569,6 +625,14 @@
         },
         {
           "username": "kübra1234",
+          "role": "member"
+        },
+        {
+          "username": "socialspeca",
+          "role": "member"
+        },
+        {
+          "username": "socialspecb",
           "role": "member"
         }
       ],
@@ -626,6 +690,14 @@
         {
           "username": "kübra1234",
           "role": "member"
+        },
+        {
+          "username": "socialspeca",
+          "role": "member"
+        },
+        {
+          "username": "socialspecb",
+          "role": "member"
         }
       ],
       "categories": [
@@ -664,6 +736,8 @@
     "chn_announcements": [
       {
         "reactions": {},
+        "replyTo": null,
+        "attachments": [],
         "id": "msg_seed_1",
         "user": "admin",
         "text": "Sunucuya hos geldiniz. /help ile komutlari gorebilirsiniz.",
@@ -675,6 +749,8 @@
             "Gamze"
           ]
         },
+        "replyTo": null,
+        "attachments": [],
         "id": "msg_n0giczg7",
         "user": "nehir",
         "text": "selam",
@@ -682,6 +758,8 @@
       },
       {
         "reactions": {},
+        "replyTo": null,
+        "attachments": [],
         "id": "msg_4qm94spv",
         "user": "Gamze",
         "text": "Nasilsiniz",
@@ -689,6 +767,8 @@
       },
       {
         "reactions": {},
+        "replyTo": null,
+        "attachments": [],
         "id": "msg_nvqsghnk",
         "user": "Gamze",
         "text": "hey!",
@@ -696,6 +776,8 @@
       },
       {
         "reactions": {},
+        "replyTo": null,
+        "attachments": [],
         "id": "msg_nvksvp0l",
         "user": "nehir",
         "text": "heyyyooooo",
@@ -707,6 +789,8 @@
             "Gamze"
           ]
         },
+        "replyTo": null,
+        "attachments": [],
         "id": "msg_p8ip4ed5",
         "user": "küboo",
         "text": "deneme",
@@ -714,6 +798,8 @@
       },
       {
         "reactions": {},
+        "replyTo": null,
+        "attachments": [],
         "id": "msg_m8ts55of",
         "user": "Gamze",
         "text": "Deneme",
@@ -723,6 +809,8 @@
     "chn_general": [
       {
         "reactions": {},
+        "replyTo": null,
+        "attachments": [],
         "id": "msg_seed_2",
         "user": "student",
         "text": "Merhaba millet.",
@@ -730,6 +818,8 @@
       },
       {
         "reactions": {},
+        "replyTo": null,
+        "attachments": [],
         "id": "msg_seed_3",
         "user": "moderator",
         "text": "Kurallara dikkat edelim.",
@@ -737,6 +827,8 @@
       },
       {
         "reactions": {},
+        "replyTo": null,
+        "attachments": [],
         "id": "msg_fppeo67c",
         "user": "nehir",
         "text": "selam",
@@ -744,6 +836,8 @@
       },
       {
         "reactions": {},
+        "replyTo": null,
+        "attachments": [],
         "id": "msg_6qpgf67l",
         "user": "Büşra",
         "text": "Selam",
@@ -753,6 +847,8 @@
     "chn_mod_room": [
       {
         "reactions": {},
+        "replyTo": null,
+        "attachments": [],
         "id": "msg_seed_4",
         "user": "moderator",
         "text": "Raporlari buradan takip edelim.",
@@ -762,6 +858,8 @@
     "chn_4orkbtqc": [
       {
         "reactions": {},
+        "replyTo": null,
+        "attachments": [],
         "id": "msg_0s4benvw",
         "user": "system",
         "text": "nehir sunucuyu olusturdu.",
@@ -771,6 +869,8 @@
     "chn_bfkn0chi": [
       {
         "reactions": {},
+        "replyTo": null,
+        "attachments": [],
         "id": "msg_obzdqqqd",
         "user": "system",
         "text": "nehir sunucuyu olusturdu.",
@@ -778,6 +878,8 @@
       },
       {
         "reactions": {},
+        "replyTo": null,
+        "attachments": [],
         "id": "msg_smxc36k1",
         "user": "Büşra",
         "text": "Senin",
@@ -787,6 +889,8 @@
     "chn_q031kbto": [
       {
         "reactions": {},
+        "replyTo": null,
+        "attachments": [],
         "id": "msg_bs8e75oy",
         "user": "system",
         "text": "nehir sunucuyu olusturdu.",
@@ -796,6 +900,8 @@
     "chn_6cu9ec3y": [
       {
         "reactions": {},
+        "replyTo": null,
+        "attachments": [],
         "id": "msg_z5wnn94y",
         "user": "system",
         "text": "nehir sunucuyu olusturdu.",
@@ -805,6 +911,8 @@
     "chn_tk22htqv": [
       {
         "reactions": {},
+        "replyTo": null,
+        "attachments": [],
         "id": "msg_3mv4g6ou",
         "user": "system",
         "text": "Gamze sunucuyu olusturdu.",
@@ -812,6 +920,8 @@
       },
       {
         "reactions": {},
+        "replyTo": null,
+        "attachments": [],
         "id": "msg_8w5w8nyn",
         "user": "Gamze",
         "text": "hey girll",
@@ -821,6 +931,8 @@
     "chn_jutxvu0p": [
       {
         "reactions": {},
+        "replyTo": null,
+        "attachments": [],
         "id": "msg_a996wbo2",
         "user": "system",
         "text": "Büşra sunucuyu olusturdu.",
@@ -847,97 +959,127 @@
       "status": "online",
       "currentServerId": "srv_campus",
       "currentChannelId": "chn_announcements",
-      "voiceChannelId": null
+      "voiceChannelId": null,
+      "lastSeenAt": null
     },
     "moderator": {
       "status": "away",
       "currentServerId": "srv_campus",
       "currentChannelId": "chn_mod_room",
-      "voiceChannelId": null
+      "voiceChannelId": null,
+      "lastSeenAt": null
     },
     "student": {
       "status": "online",
       "currentServerId": "srv_campus",
       "currentChannelId": "chn_general",
-      "voiceChannelId": "chn_voice_lounge"
+      "voiceChannelId": "chn_voice_lounge",
+      "lastSeenAt": null
     },
     "nehir": {
       "status": "online",
       "currentServerId": "srv_campus",
       "currentChannelId": "chn_announcements",
-      "voiceChannelId": null
+      "voiceChannelId": null,
+      "lastSeenAt": null
     },
     "Busra": {
       "status": "online",
       "currentServerId": "srv_campus",
       "currentChannelId": "chn_announcements",
-      "voiceChannelId": null
+      "voiceChannelId": null,
+      "lastSeenAt": null
     },
     "Gamze": {
       "status": "online",
       "currentServerId": "srv_e25dj4ad",
       "currentChannelId": "chn_tk22htqv",
-      "voiceChannelId": null
+      "voiceChannelId": null,
+      "lastSeenAt": null
     },
     "kübra": {
       "status": "online",
       "currentServerId": "srv_campus",
       "currentChannelId": "chn_announcements",
-      "voiceChannelId": null
+      "voiceChannelId": null,
+      "lastSeenAt": null
     },
     "Büşra": {
       "status": "online",
       "currentServerId": "srv_6cd0e2u1",
       "currentChannelId": "chn_imftqde8",
-      "voiceChannelId": "chn_imftqde8"
+      "voiceChannelId": "chn_imftqde8",
+      "lastSeenAt": null
     },
     "kubra": {
       "status": "online",
       "currentServerId": "srv_campus",
       "currentChannelId": "chn_announcements",
-      "voiceChannelId": null
+      "voiceChannelId": null,
+      "lastSeenAt": null
     },
     "kubra123": {
       "status": "online",
       "currentServerId": "srv_campus",
       "currentChannelId": "chn_announcements",
-      "voiceChannelId": null
+      "voiceChannelId": null,
+      "lastSeenAt": null
     },
     "deneme": {
       "status": "online",
       "currentServerId": "srv_campus",
       "currentChannelId": "chn_announcements",
-      "voiceChannelId": null
+      "voiceChannelId": null,
+      "lastSeenAt": null
     },
     "benkubra": {
       "status": "online",
       "currentServerId": "srv_campus",
       "currentChannelId": "chn_announcements",
-      "voiceChannelId": null
+      "voiceChannelId": null,
+      "lastSeenAt": null
     },
     "deneme123": {
       "status": "online",
       "currentServerId": "srv_campus",
       "currentChannelId": "chn_voice_lounge",
-      "voiceChannelId": null
+      "voiceChannelId": null,
+      "lastSeenAt": null
     },
     "nehir123": {
       "status": "online",
       "currentServerId": "srv_campus",
       "currentChannelId": "chn_voice_lounge",
-      "voiceChannelId": null
+      "voiceChannelId": null,
+      "lastSeenAt": null
     },
     "küboo": {
       "status": "online",
       "currentServerId": "srv_campus",
       "currentChannelId": "chn_voice_lounge",
-      "voiceChannelId": null
+      "voiceChannelId": null,
+      "lastSeenAt": null
     },
     "kübra1234": {
       "status": "online",
       "currentServerId": "srv_campus",
       "currentChannelId": "chn_announcements",
-      "voiceChannelId": null
+      "voiceChannelId": null,
+      "lastSeenAt": null
+    },
+    "socialspeca": {
+      "status": "online",
+      "currentServerId": "srv_campus",
+      "currentChannelId": "chn_announcements",
+      "voiceChannelId": null,
+      "lastSeenAt": null
+    },
+    "socialspecb": {
+      "status": "online",
+      "currentServerId": "srv_campus",
+      "currentChannelId": "chn_announcements",
+      "voiceChannelId": null,
+      "lastSeenAt": null
     }
   },
   "directMessages": {
@@ -947,6 +1089,8 @@
         "seenBy": [
           "nehir"
         ],
+        "replyTo": null,
+        "attachments": [],
         "id": "dm_uebruj7c",
         "user": "nehir",
         "text": "selammm canımmm",
@@ -960,6 +1104,8 @@
           "nehir",
           "Gamze"
         ],
+        "replyTo": null,
+        "attachments": [],
         "id": "dm_ab32vcae",
         "user": "nehir",
         "text": "askkk",
@@ -971,6 +1117,8 @@
           "nehir",
           "Gamze"
         ],
+        "replyTo": null,
+        "attachments": [],
         "id": "dm_9ntc9dgn",
         "user": "nehir",
         "text": "KIS BAHCESİ",
@@ -982,6 +1130,8 @@
           "nehir",
           "Gamze"
         ],
+        "replyTo": null,
+        "attachments": [],
         "id": "dm_bow2yz65",
         "user": "nehir",
         "text": "kısss",
@@ -992,6 +1142,8 @@
         "seenBy": [
           "Gamze"
         ],
+        "replyTo": null,
+        "attachments": [],
         "id": "dm_s6sa463k",
         "user": "Gamze",
         "text": "Nehirimmmm",
@@ -1004,6 +1156,8 @@
         "seenBy": [
           "Büşra"
         ],
+        "replyTo": null,
+        "attachments": [],
         "id": "dm_ghqbzomn",
         "user": "Büşra",
         "text": "Selam",
@@ -1016,6 +1170,8 @@
         "seenBy": [
           "küboo"
         ],
+        "replyTo": null,
+        "attachments": [],
         "id": "dm_tm40qp4g",
         "user": "küboo",
         "text": "deneme",
@@ -1028,6 +1184,8 @@
         "seenBy": [
           "kübra1234"
         ],
+        "replyTo": null,
+        "attachments": [],
         "id": "dm_47ll8lap",
         "user": "kübra1234",
         "text": "deneme",
@@ -1038,6 +1196,8 @@
         "seenBy": [
           "kübra1234"
         ],
+        "replyTo": null,
+        "attachments": [],
         "id": "dm_9iqbpqib",
         "user": "kübra1234",
         "text": "hi",
@@ -1046,15 +1206,503 @@
     ],
     "admin__student": [
       {
+        "reactions": {},
+        "seenBy": [
+          "admin",
+          "student"
+        ],
+        "replyTo": null,
+        "attachments": [],
         "id": "dm_3e5jp4bq",
         "user": "admin",
         "text": "dm smoke test",
-        "time": 1775682995578,
+        "time": 1775682995578
+      },
+      {
         "reactions": {},
         "seenBy": [
-          "admin"
-        ]
+          "student"
+        ],
+        "replyTo": null,
+        "attachments": [],
+        "id": "dm_5i3dmrh7",
+        "user": "student",
+        "text": "discord dm smoke",
+        "time": 1775686771141
       }
     ]
+  },
+  "auditLogs": [
+    {
+      "id": "audit_z0jozq1o",
+      "serverId": null,
+      "actor": "socialspeca",
+      "action": "user.blocked",
+      "targetType": "user",
+      "targetId": "socialspecb",
+      "summary": "socialspeca socialspecb kullanicisini engelledi.",
+      "metadata": {},
+      "time": 1775946051706
+    },
+    {
+      "id": "audit_m4oim6e3",
+      "serverId": null,
+      "actor": "socialspecb",
+      "action": "privacy.updated",
+      "targetType": "user",
+      "targetId": "socialspecb",
+      "summary": "socialspecb DM gizlilik ayarini friends olarak degistirdi.",
+      "metadata": {
+        "dmPolicy": "friends"
+      },
+      "time": 1775946051687
+    },
+    {
+      "id": "audit_goslup1p",
+      "serverId": "srv_v8sgafkr",
+      "actor": "socialspecb",
+      "action": "friend.request.accepted",
+      "targetType": "user",
+      "targetId": "socialspeca",
+      "summary": "socialspecb socialspeca istegine kabul verdi.",
+      "metadata": {},
+      "time": 1775946051665
+    },
+    {
+      "id": "audit_j29vhu7k",
+      "serverId": "srv_e25dj4ad",
+      "actor": "socialspecb",
+      "action": "friend.request.accepted",
+      "targetType": "user",
+      "targetId": "socialspeca",
+      "summary": "socialspecb socialspeca istegine kabul verdi.",
+      "metadata": {},
+      "time": 1775946051665
+    },
+    {
+      "id": "audit_pbnd1prg",
+      "serverId": "srv_i8w1nu29",
+      "actor": "socialspecb",
+      "action": "friend.request.accepted",
+      "targetType": "user",
+      "targetId": "socialspeca",
+      "summary": "socialspecb socialspeca istegine kabul verdi.",
+      "metadata": {},
+      "time": 1775946051665
+    },
+    {
+      "id": "audit_ju2zwz5w",
+      "serverId": "srv_5wu3bxr9",
+      "actor": "socialspecb",
+      "action": "friend.request.accepted",
+      "targetType": "user",
+      "targetId": "socialspeca",
+      "summary": "socialspecb socialspeca istegine kabul verdi.",
+      "metadata": {},
+      "time": 1775946051665
+    },
+    {
+      "id": "audit_f4nf2wsm",
+      "serverId": "srv_6cd0e2u1",
+      "actor": "socialspecb",
+      "action": "friend.request.accepted",
+      "targetType": "user",
+      "targetId": "socialspeca",
+      "summary": "socialspecb socialspeca istegine kabul verdi.",
+      "metadata": {},
+      "time": 1775946051665
+    },
+    {
+      "id": "audit_hxfem59o",
+      "serverId": "srv_wlo566wy",
+      "actor": "socialspecb",
+      "action": "friend.request.accepted",
+      "targetType": "user",
+      "targetId": "socialspeca",
+      "summary": "socialspecb socialspeca istegine kabul verdi.",
+      "metadata": {},
+      "time": 1775946051665
+    },
+    {
+      "id": "audit_o37su6q5",
+      "serverId": "srv_campus",
+      "actor": "socialspecb",
+      "action": "friend.request.accepted",
+      "targetType": "user",
+      "targetId": "socialspeca",
+      "summary": "socialspecb socialspeca istegine kabul verdi.",
+      "metadata": {},
+      "time": 1775946051665
+    },
+    {
+      "id": "audit_n54xjzvw",
+      "serverId": "srv_v8sgafkr",
+      "actor": "socialspeca",
+      "action": "friend.request.sent",
+      "targetType": "user",
+      "targetId": "socialspecb",
+      "summary": "socialspeca socialspecb kullanicisina arkadaslik istegi gonderdi.",
+      "metadata": {},
+      "time": 1775946051640
+    },
+    {
+      "id": "audit_gpui2g9x",
+      "serverId": "srv_e25dj4ad",
+      "actor": "socialspeca",
+      "action": "friend.request.sent",
+      "targetType": "user",
+      "targetId": "socialspecb",
+      "summary": "socialspeca socialspecb kullanicisina arkadaslik istegi gonderdi.",
+      "metadata": {},
+      "time": 1775946051640
+    },
+    {
+      "id": "audit_hvaslzhf",
+      "serverId": "srv_i8w1nu29",
+      "actor": "socialspeca",
+      "action": "friend.request.sent",
+      "targetType": "user",
+      "targetId": "socialspecb",
+      "summary": "socialspeca socialspecb kullanicisina arkadaslik istegi gonderdi.",
+      "metadata": {},
+      "time": 1775946051640
+    },
+    {
+      "id": "audit_oj41lh9w",
+      "serverId": "srv_5wu3bxr9",
+      "actor": "socialspeca",
+      "action": "friend.request.sent",
+      "targetType": "user",
+      "targetId": "socialspecb",
+      "summary": "socialspeca socialspecb kullanicisina arkadaslik istegi gonderdi.",
+      "metadata": {},
+      "time": 1775946051640
+    },
+    {
+      "id": "audit_ppqvt7gn",
+      "serverId": "srv_6cd0e2u1",
+      "actor": "socialspeca",
+      "action": "friend.request.sent",
+      "targetType": "user",
+      "targetId": "socialspecb",
+      "summary": "socialspeca socialspecb kullanicisina arkadaslik istegi gonderdi.",
+      "metadata": {},
+      "time": 1775946051639
+    },
+    {
+      "id": "audit_q0u56sgw",
+      "serverId": "srv_wlo566wy",
+      "actor": "socialspeca",
+      "action": "friend.request.sent",
+      "targetType": "user",
+      "targetId": "socialspecb",
+      "summary": "socialspeca socialspecb kullanicisina arkadaslik istegi gonderdi.",
+      "metadata": {},
+      "time": 1775946051639
+    },
+    {
+      "id": "audit_2yhtnhbq",
+      "serverId": "srv_campus",
+      "actor": "socialspeca",
+      "action": "friend.request.sent",
+      "targetType": "user",
+      "targetId": "socialspecb",
+      "summary": "socialspeca socialspecb kullanicisina arkadaslik istegi gonderdi.",
+      "metadata": {},
+      "time": 1775946051639
+    },
+    {
+      "id": "audit_qawb5eet",
+      "serverId": "srv_v8sgafkr",
+      "actor": "socialspecb",
+      "action": "member.registered",
+      "targetType": "user",
+      "targetId": "socialspecb",
+      "summary": "socialspecb sunucuya kaydoldu.",
+      "metadata": {},
+      "time": 1775946051622
+    },
+    {
+      "id": "audit_6nadtxbg",
+      "serverId": "srv_e25dj4ad",
+      "actor": "socialspecb",
+      "action": "member.registered",
+      "targetType": "user",
+      "targetId": "socialspecb",
+      "summary": "socialspecb sunucuya kaydoldu.",
+      "metadata": {},
+      "time": 1775946051622
+    },
+    {
+      "id": "audit_mytgc53i",
+      "serverId": "srv_i8w1nu29",
+      "actor": "socialspecb",
+      "action": "member.registered",
+      "targetType": "user",
+      "targetId": "socialspecb",
+      "summary": "socialspecb sunucuya kaydoldu.",
+      "metadata": {},
+      "time": 1775946051622
+    },
+    {
+      "id": "audit_rlpk720m",
+      "serverId": "srv_5wu3bxr9",
+      "actor": "socialspecb",
+      "action": "member.registered",
+      "targetType": "user",
+      "targetId": "socialspecb",
+      "summary": "socialspecb sunucuya kaydoldu.",
+      "metadata": {},
+      "time": 1775946051622
+    },
+    {
+      "id": "audit_n0m06wmi",
+      "serverId": "srv_6cd0e2u1",
+      "actor": "socialspecb",
+      "action": "member.registered",
+      "targetType": "user",
+      "targetId": "socialspecb",
+      "summary": "socialspecb sunucuya kaydoldu.",
+      "metadata": {},
+      "time": 1775946051622
+    },
+    {
+      "id": "audit_5qcdzx6u",
+      "serverId": "srv_wlo566wy",
+      "actor": "socialspecb",
+      "action": "member.registered",
+      "targetType": "user",
+      "targetId": "socialspecb",
+      "summary": "socialspecb sunucuya kaydoldu.",
+      "metadata": {},
+      "time": 1775946051622
+    },
+    {
+      "id": "audit_e673z2mt",
+      "serverId": "srv_campus",
+      "actor": "socialspecb",
+      "action": "member.registered",
+      "targetType": "user",
+      "targetId": "socialspecb",
+      "summary": "socialspecb sunucuya kaydoldu.",
+      "metadata": {},
+      "time": 1775946051622
+    },
+    {
+      "id": "audit_nqh29ihr",
+      "serverId": "srv_v8sgafkr",
+      "actor": "socialspeca",
+      "action": "member.registered",
+      "targetType": "user",
+      "targetId": "socialspeca",
+      "summary": "socialspeca sunucuya kaydoldu.",
+      "metadata": {},
+      "time": 1775946051512
+    },
+    {
+      "id": "audit_saqkhcd0",
+      "serverId": "srv_e25dj4ad",
+      "actor": "socialspeca",
+      "action": "member.registered",
+      "targetType": "user",
+      "targetId": "socialspeca",
+      "summary": "socialspeca sunucuya kaydoldu.",
+      "metadata": {},
+      "time": 1775946051512
+    },
+    {
+      "id": "audit_5hxaff88",
+      "serverId": "srv_i8w1nu29",
+      "actor": "socialspeca",
+      "action": "member.registered",
+      "targetType": "user",
+      "targetId": "socialspeca",
+      "summary": "socialspeca sunucuya kaydoldu.",
+      "metadata": {},
+      "time": 1775946051512
+    },
+    {
+      "id": "audit_8vfkaztz",
+      "serverId": "srv_5wu3bxr9",
+      "actor": "socialspeca",
+      "action": "member.registered",
+      "targetType": "user",
+      "targetId": "socialspeca",
+      "summary": "socialspeca sunucuya kaydoldu.",
+      "metadata": {},
+      "time": 1775946051512
+    },
+    {
+      "id": "audit_jsrnllgh",
+      "serverId": "srv_6cd0e2u1",
+      "actor": "socialspeca",
+      "action": "member.registered",
+      "targetType": "user",
+      "targetId": "socialspeca",
+      "summary": "socialspeca sunucuya kaydoldu.",
+      "metadata": {},
+      "time": 1775946051512
+    },
+    {
+      "id": "audit_crliga95",
+      "serverId": "srv_wlo566wy",
+      "actor": "socialspeca",
+      "action": "member.registered",
+      "targetType": "user",
+      "targetId": "socialspeca",
+      "summary": "socialspeca sunucuya kaydoldu.",
+      "metadata": {},
+      "time": 1775946051512
+    },
+    {
+      "id": "audit_gu7efwpc",
+      "serverId": "srv_campus",
+      "actor": "socialspeca",
+      "action": "member.registered",
+      "targetType": "user",
+      "targetId": "socialspeca",
+      "summary": "socialspeca sunucuya kaydoldu.",
+      "metadata": {},
+      "time": 1775946051512
+    },
+    {
+      "id": "audit_fvbmmxvf",
+      "serverId": "srv_campus",
+      "actor": "admin",
+      "action": "invite.created",
+      "targetType": "invite",
+      "targetId": "wrz1jn",
+      "summary": "admin yeni bir davet linki olusturdu.",
+      "metadata": {
+        "channelId": "chn_announcements",
+        "maxUses": 2,
+        "expiresAt": 1775776638087
+      },
+      "time": 1775773038087
+    },
+    {
+      "id": "audit_gefmmivz",
+      "serverId": "srv_campus",
+      "actor": "admin",
+      "action": "member.login",
+      "targetType": "user",
+      "targetId": "admin",
+      "summary": "admin giris yapti.",
+      "metadata": {},
+      "time": 1775773002840
+    }
+  ],
+  "invites": [
+    {
+      "id": "inv_23ng7e1t",
+      "code": "wrz1jn",
+      "serverId": "srv_campus",
+      "channelId": "chn_announcements",
+      "createdBy": "admin",
+      "createdAt": 1775773038087,
+      "expiresAt": 1775776638087,
+      "maxUses": 2,
+      "uses": 0,
+      "revokedAt": null
+    }
+  ],
+  "friendships": [
+    {
+      "id": "frd_1okewhnz",
+      "key": "socialspeca__socialspecb",
+      "users": [
+        "socialspeca",
+        "socialspecb"
+      ],
+      "createdAt": 1775946051665
+    }
+  ],
+  "friendRequests": [
+    {
+      "id": "frq_9gfaz6pk",
+      "from": "socialspeca",
+      "to": "socialspecb",
+      "status": "accepted",
+      "createdAt": 1775946051639,
+      "respondedAt": 1775946051665
+    }
+  ],
+  "blocks": {
+    "admin": [],
+    "moderator": [],
+    "student": [],
+    "nehir": [],
+    "Busra": [],
+    "Gamze": [],
+    "kübra": [],
+    "Büşra": [],
+    "kubra": [],
+    "kubra123": [],
+    "deneme": [],
+    "benkubra": [],
+    "deneme123": [],
+    "nehir123": [],
+    "küboo": [],
+    "kübra1234": [],
+    "socialspeca": [
+      "socialspecb"
+    ],
+    "socialspecb": []
+  },
+  "privacy": {
+    "admin": {
+      "dmPolicy": "everyone"
+    },
+    "moderator": {
+      "dmPolicy": "everyone"
+    },
+    "student": {
+      "dmPolicy": "everyone"
+    },
+    "nehir": {
+      "dmPolicy": "everyone"
+    },
+    "Busra": {
+      "dmPolicy": "everyone"
+    },
+    "Gamze": {
+      "dmPolicy": "everyone"
+    },
+    "kübra": {
+      "dmPolicy": "everyone"
+    },
+    "Büşra": {
+      "dmPolicy": "everyone"
+    },
+    "kubra": {
+      "dmPolicy": "everyone"
+    },
+    "kubra123": {
+      "dmPolicy": "everyone"
+    },
+    "deneme": {
+      "dmPolicy": "everyone"
+    },
+    "benkubra": {
+      "dmPolicy": "everyone"
+    },
+    "deneme123": {
+      "dmPolicy": "everyone"
+    },
+    "nehir123": {
+      "dmPolicy": "everyone"
+    },
+    "küboo": {
+      "dmPolicy": "everyone"
+    },
+    "kübra1234": {
+      "dmPolicy": "everyone"
+    },
+    "socialspeca": {
+      "dmPolicy": "everyone"
+    },
+    "socialspecb": {
+      "dmPolicy": "friends"
+    }
   }
 }
