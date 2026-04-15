@@ -206,7 +206,7 @@
       border-right: 1px solid var(--line);
       background: linear-gradient(180deg, rgba(var(--accent-rgb), 0.09), transparent 120px), var(--panel-2);
       display: grid;
-      grid-template-rows: auto auto auto auto auto auto auto;
+      grid-template-rows: auto auto auto auto minmax(140px, 1fr) auto auto;
       gap: 12px;
       padding: 0 0 12px;
       align-content: start;
@@ -929,7 +929,7 @@
     #channelTree {
       grid-row: auto;
       padding: 0 10px 4px;
-      overflow: visible;
+      overflow: auto;
     }
 
     #memberList,
@@ -1518,6 +1518,9 @@
     #accountCard {
       gap: 8px;
       align-content: start;
+      position: relative;
+      z-index: 1;
+      background: linear-gradient(180deg, rgba(var(--accent-rgb), 0.16), rgba(19, 16, 24, 0.96));
     }
 
     #accountCard .action-grid {
