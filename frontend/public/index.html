@@ -301,7 +301,8 @@
 
     .channel-item {
       width: 100%;
-      display: flex;
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
       align-items: center;
       gap: 8px;
       border: 0;
@@ -322,7 +323,7 @@
     }
 
     .channel-prefix {
-      min-width: 48px;
+      min-width: 34px;
       font-size: 12px;
       font-weight: 800;
       letter-spacing: 0.06em;
@@ -1450,6 +1451,8 @@
       flex-shrink: 0;
       display: grid;
       gap: 10px;
+      min-width: 0;
+      overflow: hidden;
     }
 
     .channel-section {
@@ -1466,15 +1469,50 @@
       gap: 10px;
     }
 
+    #voicePanel,
+    #accountCard > div:first-child {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .voice-name {
+      line-height: 1.15;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .voice-subtitle,
+    #accountCard .panel-subtitle {
+      line-height: 1.35;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      overflow: hidden;
+    }
+
+    .voice-member {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
     #serverSummaryCard,
     #voiceShortcutCard,
     #accountCard {
       margin: 0 12px;
     }
 
+    #voiceShortcutCard,
+    #accountCard {
+      gap: 8px;
+    }
+
     #accountCard .action-grid {
       padding: 0;
       margin-top: 0;
+      gap: 8px;
     }
 
     .voice-green,
@@ -1510,6 +1548,70 @@
       font-weight: 700;
       cursor: pointer;
       font-size: 13px;
+    }
+
+    #accountCard .warning-btn,
+    #accountCard .logout-btn,
+    #voiceShortcutCard .voice-green,
+    #voiceShortcutCard .voice-red {
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    @media (max-height: 860px) {
+      .channels {
+        gap: 10px;
+      }
+
+      .server-info-card {
+        padding: 8px 10px;
+        gap: 8px;
+      }
+
+      .channel-section {
+        margin-top: 0;
+        font-size: 10px;
+      }
+
+      .voice-name {
+        font-size: 15px;
+      }
+
+      .voice-subtitle,
+      #accountCard .panel-subtitle {
+        font-size: 12px;
+      }
+
+      .voice-members {
+        gap: 6px;
+        max-height: 78px;
+      }
+
+      .voice-actions,
+      #accountCard .action-grid {
+        gap: 6px;
+      }
+
+      .voice-green,
+      .voice-red,
+      .warning-btn,
+      .logout-btn {
+        padding: 8px 10px;
+        font-size: 12px;
+      }
+    }
+
+    @media (max-height: 760px) {
+      .voice-members {
+        max-height: 62px;
+      }
+
+      #accountCard .panel-subtitle,
+      .voice-subtitle {
+        -webkit-line-clamp: 1;
+      }
     }
 
     .top-actions {
