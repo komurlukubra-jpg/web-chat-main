@@ -1515,6 +1515,7 @@
     #voiceShortcutCard,
     #accountCard {
       gap: 8px;
+      align-content: start;
     }
 
     #accountCard .action-grid {
@@ -1609,16 +1610,81 @@
         padding: 8px 10px;
         font-size: 12px;
       }
+
+      #voiceShortcutCard {
+        max-height: 150px;
+      }
+
+      #accountCard {
+        max-height: 152px;
+      }
     }
 
     @media (max-height: 760px) {
+      #voiceShortcutCard,
+      #accountCard {
+        padding: 7px 9px;
+        gap: 6px;
+      }
+
+      #voiceShortcutCard {
+        max-height: 128px;
+      }
+
+      #accountCard {
+        max-height: 132px;
+      }
+
+      #voicePanel,
+      #accountCard > div:first-child {
+        gap: 4px;
+      }
+
       .voice-members {
-        max-height: 62px;
+        max-height: 42px;
+        padding-right: 2px;
       }
 
       #accountCard .panel-subtitle,
       .voice-subtitle {
         max-height: 1.35em;
+      }
+
+      .voice-actions,
+      #accountCard .action-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+      }
+
+      .voice-green,
+      .voice-red,
+      .warning-btn,
+      .logout-btn {
+        padding: 7px 8px;
+        font-size: 11px;
+      }
+    }
+
+    @media (max-height: 700px) {
+      #voiceShortcutCard,
+      #accountCard {
+        overflow-y: auto;
+      }
+
+      #voiceShortcutCard {
+        max-height: 112px;
+      }
+
+      #accountCard {
+        max-height: 118px;
+      }
+
+      .voice-name {
+        font-size: 14px;
+      }
+
+      .channel-section {
+        font-size: 9px;
       }
     }
 
