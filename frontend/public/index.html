@@ -1047,6 +1047,30 @@
       min-width: 0;
     }
 
+    body.auth-screen .app-shell {
+      display: none !important;
+    }
+
+    body.auth-screen .modal-overlay {
+      background:
+        radial-gradient(circle at top, rgba(var(--accent-rgb), 0.2), transparent 38%),
+        rgba(14, 11, 17, 0.94);
+      padding: 16px;
+    }
+
+    body.light-mode.auth-screen .modal-overlay {
+      background:
+        radial-gradient(circle at top, rgba(var(--accent-rgb), 0.16), transparent 38%),
+        rgba(255, 246, 251, 0.96);
+    }
+
+    body.auth-screen .modal {
+      background: var(--panel);
+      border: 1px solid var(--line-soft);
+      box-shadow: var(--shadow);
+      border-radius: 24px;
+    }
+
     .modal.modal-wide {
       width: min(680px, 100%);
     }
@@ -4025,6 +4049,23 @@
         box-shadow: var(--mobile-card-shadow);
       }
 
+      #callPanelSection,
+      .sidebar-panel.utility-panel {
+        display: grid !important;
+        margin: 0 var(--mobile-pane-pad) 12px;
+        padding: 14px;
+        border-radius: 18px;
+        background: var(--mobile-card-bg);
+        border: 1px solid var(--line-soft);
+        box-shadow: var(--mobile-card-shadow);
+      }
+
+      #reportList,
+      #pollList,
+      #permissionsList {
+        display: block !important;
+      }
+
       .workspace {
         min-height: calc(100dvh - var(--mobile-bottom-nav));
         height: calc(100dvh - var(--mobile-bottom-nav));
@@ -4047,10 +4088,22 @@
         background: linear-gradient(180deg, rgba(255, 246, 251, 0.98), rgba(255, 246, 251, 0.92));
       }
 
-      #presenceSelect,
+      #presenceSelect {
+        display: block !important;
+        min-width: 86px;
+        height: 36px;
+        padding: 0 10px;
+        border-radius: 12px;
+        background: var(--surface-input);
+        border: 1px solid var(--line-soft);
+        color: var(--text);
+      }
+
       #searchBtn,
-      #pinBtn {
-        display: none !important;
+      #pinBtn,
+      #videoBtn,
+      #membersToggleBtn {
+        display: grid !important;
       }
 
       .workspace-meta {
@@ -4100,6 +4153,7 @@
         right: 10px;
         bottom: 8px;
         z-index: 40;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
         padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
         border-radius: 20px;
         border: 1px solid var(--line-soft);
@@ -4119,6 +4173,10 @@
 
       .mobile-nav-btn.active {
         background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.32), rgba(var(--accent-rgb), 0.18));
+      }
+
+      .mobile-theme-btn {
+        display: grid !important;
       }
     }
 
@@ -4342,6 +4400,10 @@
     <button class="mobile-nav-btn" data-mobile-target="members">
       <span class="mobile-nav-icon">&#128101;</span>
       <span>Kisiler</span>
+    </button>
+    <button id="mobileThemeBtn" class="mobile-nav-btn mobile-theme-btn" type="button" title="Tema Degistir">
+      <span id="mobileThemeIcon" class="mobile-nav-icon">&#127769;</span>
+      <span>Tema</span>
     </button>
   </nav>
 

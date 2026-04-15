@@ -140,6 +140,8 @@ const membersCountPill = document.getElementById('membersCountPill');
 const appShell = document.getElementById('appShell');
 const mobileNav = document.getElementById('mobileNav');
 const mobileNavButtons = [...document.querySelectorAll('[data-mobile-target]')];
+const mobileThemeBtn = document.getElementById('mobileThemeBtn');
+const mobileThemeIcon = document.getElementById('mobileThemeIcon');
 const mobileWorkspaceBtn = document.getElementById('mobileWorkspaceBtn');
 const mobileContextTag = document.getElementById('mobileContextTag');
 const mobileChannelsSummary = document.getElementById('mobileChannelsSummary');
@@ -149,6 +151,13 @@ let currentTheme = localStorage.getItem('community-theme')
   || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
 let micEnabled = true;
 let cameraEnabled = true;
+
+function setAuthScreen(active) {
+  document.body.classList.toggle('auth-screen', active);
+  if (active) {
+    appShell.classList.add('hidden');
+  }
+}
 
 function isMobileView() {
   return window.innerWidth <= 860;
@@ -2214,11 +2223,13 @@ async function bootstrap() {
   appState.callPresence = appState.callPresence || {};
   presenceSelect.value = appState.currentUser?.preferredStatus || appState.presence[currentUser]?.status || 'online';
   renderAll();
+  setAuthScreen(false);
   document.getElementById('appShell').classList.remove('hidden');
   connectWS();
 }
 
 function showLogin(prefillIdentifier = preferredLoginIdentifier) {
+  setAuthScreen(true);
   showModal(`
     <h2>Topluluk Sunucusu Giris</h2>
     <p class="modal-copy">Demo hesaplar: admin/123, moderator/123, student/123. Ayni hesap web ve mobilde ayni anda acik kalabilir.</p>
@@ -2258,6 +2269,7 @@ function showLogin(prefillIdentifier = preferredLoginIdentifier) {
 }
 
 function showRegister(prefill = {}) {
+  setAuthScreen(true);
   showModal(`
     <h2>Yeni Uye</h2>
     <p class="modal-copy">Kullanici adlari tekildir ve 3-24 karakter arasinda olmalidir.</p>
@@ -2931,6 +2943,9 @@ function applyTheme(theme) {
   currentTheme = theme;
   document.body.classList.toggle('light-mode', theme === 'light');
   themeToggleBtn.innerHTML = theme === 'light' ? '&#9728;' : '&#127769;';
+  if (mobileThemeIcon) {
+    mobileThemeIcon.innerHTML = theme === 'light' ? '&#9728;' : '&#127769;';
+  }
   localStorage.setItem('community-theme', theme);
 }
 
@@ -3544,7 +3559,7 @@ function openQuickActions() {
 window.onload = () => {
   applyTheme(currentTheme);
   renderMobileLayout();
-  document.getElementById('appShell').classList.add('hidden');
+  setAuthScreen(true);
   showLogin();
   document.body.addEventListener('click', () => {
     ensureNotificationsEnabled();
@@ -3605,6 +3620,9 @@ window.onload = () => {
   };
   modalOverlay.onclick = (event) => {
     if (event.target === modalOverlay) {
+      if (document.body.classList.contains('auth-screen')) {
+        return;
+      }
       hideModal();
     }
   };
@@ -3620,6 +3638,11 @@ window.onload = () => {
   themeToggleBtn.onclick = () => {
     applyTheme(currentTheme === 'dark' ? 'light' : 'dark');
   };
+  if (mobileThemeBtn) {
+    mobileThemeBtn.onclick = () => {
+      applyTheme(currentTheme === 'dark' ? 'light' : 'dark');
+    };
+  }
   startVideoBtn.onclick = startVideoCall;
   endVideoBtn.onclick = endVideoCall;
   toggleMicBtn.onclick = toggleMic;
