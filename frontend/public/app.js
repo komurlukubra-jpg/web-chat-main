@@ -150,6 +150,13 @@ const mobileChannelsSummary = document.getElementById('mobileChannelsSummary');
 const mobilePeopleKicker = document.getElementById('mobilePeopleKicker');
 const mobilePeopleTitle = document.getElementById('mobilePeopleTitle');
 const mobilePeopleSummary = document.getElementById('mobilePeopleSummary');
+const socialBottomDock = document.getElementById('socialBottomDock');
+const socialDockAvatar = document.getElementById('socialDockAvatar');
+const socialDockUser = document.getElementById('socialDockUser');
+const socialDockStatus = document.getElementById('socialDockStatus');
+const socialDockCenterBtn = document.getElementById('socialDockCenterBtn');
+const socialDockBackBtn = document.getElementById('socialDockBackBtn');
+const socialDockMenuBtn = document.getElementById('socialDockMenuBtn');
 
 let currentTheme = localStorage.getItem('community-theme')
   || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
@@ -167,6 +174,38 @@ function isMobileView() {
   return window.innerWidth <= 860;
 }
 
+function isMobileSocialMode() {
+  return isMobileView() && mobileView === 'members' && activeSidebarTab === 'dm';
+}
+
+function syncSocialMobileMode() {
+  const active = isMobileSocialMode();
+  document.body.classList.toggle('social-mobile-mode', active);
+  if (socialBottomDock) {
+    socialBottomDock.classList.toggle('hidden', !active);
+    socialBottomDock.setAttribute('aria-hidden', String(!active));
+  }
+
+  if (!active) {
+    return;
+  }
+
+  const hostLabel = (window.location.host || 'community').replace(/^www\./, '');
+  const presence = currentUser ? (appState.presence[currentUser]?.status || 'online') : 'online';
+  if (socialDockAvatar) {
+    socialDockAvatar.textContent = (currentUser || 'G').slice(0, 1).toUpperCase();
+  }
+  if (socialDockUser) {
+    socialDockUser.textContent = currentUser || 'guest';
+  }
+  if (socialDockStatus) {
+    socialDockStatus.textContent = formatPresenceLabel(presence);
+  }
+  if (socialDockCenterBtn) {
+    socialDockCenterBtn.textContent = hostLabel;
+  }
+}
+
 function setMobileView(view) {
   mobileView = view;
   if (view === 'members' && isDmConversation()) {
@@ -176,6 +215,7 @@ function setMobileView(view) {
   mobileNavButtons.forEach((button) => {
     button.classList.toggle('active', button.dataset.mobileTarget === view);
   });
+  syncSocialMobileMode();
 }
 
 function syncMobileViewAfterSelection(view = 'chat') {
@@ -190,6 +230,7 @@ function renderMobileLayout() {
   }
   setMobileView(isMobileView() ? mobileView : 'chat');
   mobileWorkspaceBtn.innerHTML = isMobileView() && mobileView !== 'chat' ? '&#10005;' : '&#9776;';
+  syncSocialMobileMode();
 }
 
 function applyTheme(theme) {
@@ -1421,6 +1462,7 @@ function renderHeader() {
     ? 'Direkt mesajlasma alani'
     : (channel.kind === 'voice' ? 'Sesli oda kanali' : 'Topluluk metin kanali');
   pinnedMessageText.textContent = getPinnedMessage();
+  syncSocialMobileMode();
 }
 
 function renderComposerState() {
@@ -1814,6 +1856,7 @@ function renderSidebarTab() {
   mobilePeopleSummary.textContent = isDm
     ? 'Arkadaslar, istekler ve sosyal akis burada.'
     : 'Sunucudaki uyeleri incele veya profilden DM baslat.';
+  syncSocialMobileMode();
   renderDmList();
 }
 
@@ -3654,6 +3697,20 @@ window.onload = () => {
       applyTheme(currentTheme === 'dark' ? 'light' : 'dark');
     };
   }
+  if (socialDockBackBtn) {
+    socialDockBackBtn.onclick = () => {
+      activeSidebarTab = 'members';
+      renderSidebarTab();
+    };
+  }
+  if (socialDockCenterBtn) {
+    socialDockCenterBtn.onclick = () => {
+      setMobileView('chat');
+    };
+  }
+  if (socialDockMenuBtn) {
+    socialDockMenuBtn.onclick = openMobileActions;
+  }
   startVideoBtn.onclick = startVideoCall;
   endVideoBtn.onclick = endVideoCall;
   toggleMicBtn.onclick = toggleMic;
@@ -4151,7 +4208,7 @@ function renderDmList() {
   }
 
   const filterButtons = [
-    ['friends', 'Arkadaslar'],
+    ['friends', '👥 Arkadaslar'],
     ['online', 'Cevrimici'],
     ['all', 'Tumu'],
     ['pending', 'Bekleyen']
@@ -4168,20 +4225,30 @@ function renderDmList() {
             <div class="social-mobile-title">Direkt Mesajlar</div>
           </div>
           <div class="social-mobile-actions">
-            <button id="socialSearchBtn" class="social-mobile-icon" title="Ara">&#128269;</button>
+            <button id="socialSearchBtn" class="social-mobile-icon" title="Mesajlar">&#128172;</button>
             <button id="socialMembersBtn" class="social-mobile-icon" title="Uyeler">&#128101;</button>
           </div>
+        </div>
+        <div class="social-avatar-strip">
+          <button id="socialAvatarSelf" class="social-avatar-button" title="Profil">
+            ${(currentUser || 'G').slice(0, 1).toUpperCase()}
+          </button>
+          <button id="socialAvatarAdd" class="social-avatar-add" title="Arkadas Ekle">+</button>
         </div>
         <div class="social-filter-row">${filterButtons}</div>
         <div class="social-toolbar-actions">
           <button id="mobileFriendAddBtn" class="social-add-btn">+ Arkadas Ekle</button>
         </div>
       </section>
-      ${sections.join('') || '<div class="social-empty-state">Bu filtre icin gosterilecek kisi yok.</div>'}
+      <section class="social-pane-body">
+        ${sections.join('') || '<div class="social-empty-state">Bu alanda gosterilecek kisi yok.</div>'}
+      </section>
     </div>
   `;
 
   document.getElementById('mobileFriendAddBtn')?.addEventListener('click', showAddFriendModal);
+  document.getElementById('socialAvatarAdd')?.addEventListener('click', showAddFriendModal);
+  document.getElementById('socialAvatarSelf')?.addEventListener('click', () => showUserProfile(currentUser));
   document.getElementById('socialSearchBtn')?.addEventListener('click', showSearchModal);
   document.getElementById('socialProfileBtn')?.addEventListener('click', () => showUserProfile(currentUser));
   document.getElementById('socialMembersBtn')?.addEventListener('click', () => {
