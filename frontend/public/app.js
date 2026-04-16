@@ -4162,15 +4162,14 @@ function renderDmList() {
   dmList.innerHTML = `
     <div class="social-mobile-shell">
       <section class="social-mobile-toolbar">
-        <div class="social-mobile-head">
-          <button id="socialMembersBtn" class="social-mobile-icon social-mobile-icon-left" title="Uyeler">&#8592;</button>
+        <div class="social-mobile-topbar">
+          <button id="socialProfileBtn" class="social-mobile-icon social-mobile-brand" title="Profil">&#10038;</button>
           <div class="social-mobile-title-wrap">
-            <div class="social-mobile-title">${currentUser || 'Topluluk'}</div>
-            <div class="social-mobile-subtitle">Sosyal</div>
+            <div class="social-mobile-title">Direkt Mesajlar</div>
           </div>
           <div class="social-mobile-actions">
             <button id="socialSearchBtn" class="social-mobile-icon" title="Ara">&#128269;</button>
-            <button id="socialUtilityBtn" class="social-mobile-icon" title="Sosyal Ayarlar">&#128172;</button>
+            <button id="socialMembersBtn" class="social-mobile-icon" title="Uyeler">&#128101;</button>
           </div>
         </div>
         <div class="social-filter-row">${filterButtons}</div>
@@ -4184,7 +4183,7 @@ function renderDmList() {
 
   document.getElementById('mobileFriendAddBtn')?.addEventListener('click', showAddFriendModal);
   document.getElementById('socialSearchBtn')?.addEventListener('click', showSearchModal);
-  document.getElementById('socialUtilityBtn')?.addEventListener('click', showUtilityHub);
+  document.getElementById('socialProfileBtn')?.addEventListener('click', () => showUserProfile(currentUser));
   document.getElementById('socialMembersBtn')?.addEventListener('click', () => {
     activeSidebarTab = 'members';
     renderSidebarTab();
