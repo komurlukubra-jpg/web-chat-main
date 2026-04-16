@@ -140,6 +140,7 @@ const membersCountPill = document.getElementById('membersCountPill');
 const appShell = document.getElementById('appShell');
 const mobileNav = document.getElementById('mobileNav');
 const mobileNavButtons = [...document.querySelectorAll('[data-mobile-target]')];
+const mobileActionsBtn = document.getElementById('mobileActionsBtn');
 const mobileThemeBtn = document.getElementById('mobileThemeBtn');
 const mobileThemeIcon = document.getElementById('mobileThemeIcon');
 const mobileWorkspaceBtn = document.getElementById('mobileWorkspaceBtn');
@@ -3658,6 +3659,9 @@ window.onload = () => {
   searchBtn.onclick = showSearchModal;
   pinBtn.onclick = showPinnedInfo;
   membersToggleBtn.onclick = toggleMembersPanel;
+  if (mobileActionsBtn) {
+    mobileActionsBtn.onclick = openMobileActions;
+  }
   mobileWorkspaceBtn.onclick = () => {
     const drawerTarget = isDmConversation() ? 'members' : 'channels';
     if (isDmConversation()) {
@@ -4400,6 +4404,41 @@ function openQuickActions() {
   document.getElementById('quickReport').onclick = () => {
     hideModal();
     reportUser();
+  };
+}
+
+function openMobileActions() {
+  const peopleLabel = isDmConversation() ? 'DM Listesini Ac' : 'Uyeler ve DM';
+  const themeLabel = currentTheme === 'dark' ? 'Acik Temaya Gec' : 'Koyu Temaya Gec';
+
+  showModal(`
+    <h2>Mobil Araclar</h2>
+    <button id="mobileActionSearch" class="modal-btn primary">Ara</button>
+    <button id="mobileActionPinned" class="modal-btn secondary">Sabit Bilgi</button>
+    <button id="mobileActionPeople" class="modal-btn secondary">${peopleLabel}</button>
+    <button id="mobileActionTheme" class="modal-btn secondary">${themeLabel}</button>
+  `);
+
+  document.getElementById('mobileActionSearch').onclick = () => {
+    hideModal();
+    showSearchModal();
+  };
+
+  document.getElementById('mobileActionPinned').onclick = () => {
+    hideModal();
+    showPinnedInfo();
+  };
+
+  document.getElementById('mobileActionPeople').onclick = () => {
+    hideModal();
+    activeSidebarTab = isDmConversation() ? 'dm' : 'members';
+    renderSidebarTab();
+    setMobileView('members');
+  };
+
+  document.getElementById('mobileActionTheme').onclick = () => {
+    hideModal();
+    applyTheme(currentTheme === 'dark' ? 'light' : 'dark');
   };
 }
 
