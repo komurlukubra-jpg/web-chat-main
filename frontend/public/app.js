@@ -3893,11 +3893,22 @@ function buildSocialRowMarkup(username, options = {}) {
       ? `Son gorulme ${formatLastSeen(lastSeenAt)}`
       : formatPresenceLabel(presence));
   const openMode = options.openMode || (hasDmAccess(username) ? 'dm' : 'profile');
-  const actionLabel = options.actionLabel || 'Profil';
+  const actionLabel = Object.prototype.hasOwnProperty.call(options, 'actionLabel') ? options.actionLabel : 'Profil';
   const extraButtons = options.extraButtons || '';
+  const hideBottom = Boolean(options.hideBottom);
+  const hideTail = Boolean(options.hideTail);
+  const compactSocial = Boolean(options.compactSocial);
+  const actionMarkup = actionLabel || extraButtons
+    ? `
+      <div class="member-actions">
+        ${actionLabel ? `<button class="mini-action-btn dm-profile-btn" data-username="${username}">${escapeHtml(actionLabel)}</button>` : ''}
+        ${extraButtons}
+      </div>
+    `
+    : '';
 
   return `
-    <div class="dm-row">
+    <div class="dm-row ${compactSocial ? 'social-compact-row' : ''}">
       <button class="dm-user ${activeDmUser === username ? 'active' : ''}" data-username="${username}" data-open-mode="${openMode}">
         <span class="dm-user-top">
           <span class="dm-user-head">
@@ -3907,20 +3918,21 @@ function buildSocialRowMarkup(username, options = {}) {
               <span class="report-meta">${escapeHtml(secondary)}</span>
             </span>
           </span>
-          <span class="dm-user-tail">
-            ${unreadDmCounts[username] ? `<span class="badge-dot">${unreadDmCounts[username]}</span>` : ''}
-            <span class="presence ${presence}">${formatPresenceLabel(presence)}</span>
+          ${hideTail ? '' : `
+            <span class="dm-user-tail">
+              ${unreadDmCounts[username] ? `<span class="badge-dot">${unreadDmCounts[username]}</span>` : ''}
+              <span class="presence ${presence}">${formatPresenceLabel(presence)}</span>
+            </span>
+          `}
+        </span>
+        ${hideBottom ? '' : `
+          <span class="dm-user-bottom">
+            <span class="dm-preview">${escapeHtml(preview)}</span>
+            <span class="report-meta">${lastMessage ? formatTime(lastMessage.time) : ''}</span>
           </span>
-        </span>
-        <span class="dm-user-bottom">
-          <span class="dm-preview">${escapeHtml(preview)}</span>
-          <span class="report-meta">${lastMessage ? formatTime(lastMessage.time) : ''}</span>
-        </span>
+        `}
       </button>
-      <div class="member-actions">
-        <button class="mini-action-btn dm-profile-btn" data-username="${username}">${escapeHtml(actionLabel)}</button>
-        ${extraButtons}
-      </div>
+      ${actionMarkup}
     </div>
   `;
 }
@@ -4058,9 +4070,12 @@ function renderDmList() {
     if (friendUsers.length) {
       sections.push(buildSocialSectionMarkup(
         'Arkadaslar',
-        'DM acabilir veya profilden islemler yapabilirsin.',
+        'Arkadas listen.',
         friendUsers.map((user) => buildSocialRowMarkup(user.username, {
-          actionLabel: 'Profil'
+          actionLabel: '',
+          compactSocial: true,
+          hideBottom: true,
+          hideTail: true
         })).join('')
       ));
     }
@@ -4070,11 +4085,11 @@ function renderDmList() {
         'Cevrimici',
         'Su an aktif olan kisiler.',
         onlineUsers.map((user) => buildSocialRowMarkup(user.username, {
-          preview: hasDmAccess(user.username)
-            ? 'Hemen DM acabilir veya profilini inceleyebilirsin.'
-            : 'Profili acip sosyal durumunu gorebilirsin.',
-          actionLabel: hasDmAccess(user.username) ? 'Profil' : 'Incele',
-          openMode: hasDmAccess(user.username) ? 'dm' : 'profile'
+          actionLabel: '',
+          openMode: hasDmAccess(user.username) ? 'dm' : 'profile',
+          compactSocial: true,
+          hideBottom: true,
+          hideTail: true
         })).join('')
       ));
     }
@@ -4082,19 +4097,22 @@ function renderDmList() {
     if (visibleUsers.length) {
       sections.push(buildSocialSectionMarkup(
         'Tum Kisiler',
-        'Arkadaslar, kesfedilecek kisiler ve sosyal durumlar.',
+        'Tum sosyal liste.',
         visibleUsers.map((user) => buildSocialRowMarkup(user.username, {
-          preview: friendSet.has(user.username)
-            ? 'Arkadas listende bulunuyor.'
+          secondary: friendSet.has(user.username)
+            ? 'Arkadas'
             : incomingSet.has(user.username)
-              ? 'Sana istek gonderdi.'
+              ? 'Istek gonderdi'
               : outgoingSet.has(user.username)
-                ? 'Istek beklemede.'
-                : user.privacy?.dmPolicy === 'friends'
-                  ? 'Sadece arkadaslardan DM aliyor.'
-                  : 'Profili acip arkadas ekleyebilirsin.',
-          actionLabel: friendSet.has(user.username) || hasDmAccess(user.username) ? 'Profil' : 'Incele',
-          openMode: friendSet.has(user.username) && hasDmAccess(user.username) ? 'dm' : 'profile'
+                ? 'Beklemede'
+                : ((appState.presence[user.username]?.status || 'offline') !== 'offline'
+                  ? formatPresenceLabel(appState.presence[user.username]?.status || 'online')
+                  : 'Kullanici'),
+          actionLabel: '',
+          openMode: friendSet.has(user.username) && hasDmAccess(user.username) ? 'dm' : 'profile',
+          compactSocial: true,
+          hideBottom: true,
+          hideTail: true
         })).join('')
       ));
     }
@@ -4102,11 +4120,13 @@ function renderDmList() {
     if (incomingUsers.length) {
       sections.push(buildSocialSectionMarkup(
         'Gelen Istekler',
-        'Istekleri kabul et veya reddet.',
+        'Bekleyen istekler.',
         incomingUsers.map((user) => buildSocialRowMarkup(user.username, {
-          preview: 'Sana arkadaslik istegi gonderdi.',
-          actionLabel: 'Kabul Et',
+          actionLabel: '',
           openMode: 'profile',
+          compactSocial: true,
+          hideBottom: true,
+          hideTail: true,
           extraButtons: `
             <button class="mini-action-btn" data-social-action="accept" data-username="${user.username}">Kabul</button>
             <button class="mini-action-btn" data-social-action="decline" data-username="${user.username}">Reddet</button>
@@ -4120,9 +4140,11 @@ function renderDmList() {
         'Bekleyen Istekler',
         'Karsi tarafin cevabi bekleniyor.',
         outgoingUsers.map((user) => buildSocialRowMarkup(user.username, {
-          preview: 'Arkadaslik istegin beklemede.',
-          actionLabel: 'Profil',
-          openMode: 'profile'
+          actionLabel: '',
+          openMode: 'profile',
+          compactSocial: true,
+          hideBottom: true,
+          hideTail: true
         })).join('')
       ));
     }
@@ -4134,24 +4156,21 @@ function renderDmList() {
     ['all', 'Tumu'],
     ['pending', 'Bekleyen']
   ].map(([key, label]) => `
-    <button class="social-filter-chip ${mobileSocialFilter === key ? 'active' : ''}" data-social-filter="${key}">
-      <span>${label}</span>
-      <span class="social-filter-count">${filterCounts[key] || 0}</span>
-    </button>
+    <button class="social-filter-chip ${mobileSocialFilter === key ? 'active' : ''}" data-social-filter="${key}">${label}</button>
   `).join('');
 
   dmList.innerHTML = `
     <div class="social-mobile-shell">
       <section class="social-mobile-toolbar">
         <div class="social-mobile-head">
-          <div></div>
+          <button id="socialMembersBtn" class="social-mobile-icon social-mobile-icon-left" title="Uyeler">&#8592;</button>
           <div class="social-mobile-title-wrap">
-            <div class="social-mobile-title">Arkadaslar</div>
-            <div class="social-mobile-subtitle">${currentUser || 'Topluluk'}</div>
+            <div class="social-mobile-title">${currentUser || 'Topluluk'}</div>
+            <div class="social-mobile-subtitle">Sosyal</div>
           </div>
           <div class="social-mobile-actions">
-            <button id="socialUtilityBtn" class="social-mobile-icon" title="Sosyal Ayarlar">&#9881;</button>
-            <button id="socialMembersBtn" class="social-mobile-icon" title="Uyeler">&#128101;</button>
+            <button id="socialSearchBtn" class="social-mobile-icon" title="Ara">&#128269;</button>
+            <button id="socialUtilityBtn" class="social-mobile-icon" title="Sosyal Ayarlar">&#128172;</button>
           </div>
         </div>
         <div class="social-filter-row">${filterButtons}</div>
@@ -4164,6 +4183,7 @@ function renderDmList() {
   `;
 
   document.getElementById('mobileFriendAddBtn')?.addEventListener('click', showAddFriendModal);
+  document.getElementById('socialSearchBtn')?.addEventListener('click', showSearchModal);
   document.getElementById('socialUtilityBtn')?.addEventListener('click', showUtilityHub);
   document.getElementById('socialMembersBtn')?.addEventListener('click', () => {
     activeSidebarTab = 'members';
