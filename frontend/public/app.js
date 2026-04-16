@@ -147,6 +147,8 @@ const mobileThemeIcon = document.getElementById('mobileThemeIcon');
 const mobileWorkspaceBtn = document.getElementById('mobileWorkspaceBtn');
 const mobileContextTag = document.getElementById('mobileContextTag');
 const mobileChannelsSummary = document.getElementById('mobileChannelsSummary');
+const mobilePeopleKicker = document.getElementById('mobilePeopleKicker');
+const mobilePeopleTitle = document.getElementById('mobilePeopleTitle');
 const mobilePeopleSummary = document.getElementById('mobilePeopleSummary');
 
 let currentTheme = localStorage.getItem('community-theme')
@@ -1803,6 +1805,12 @@ function renderSidebarTab() {
   memberList.classList.toggle('hidden', isDm);
   dmList.classList.toggle('hidden', !isDm);
   sidebar.classList.toggle('sidebar-social-mode', isDm && isMobileView());
+  if (mobilePeopleKicker) {
+    mobilePeopleKicker.textContent = isDm ? 'Sosyal' : 'Kisiler';
+  }
+  if (mobilePeopleTitle) {
+    mobilePeopleTitle.textContent = isDm ? 'Arkadaslar' : 'Uyeler ve DM';
+  }
   mobilePeopleSummary.textContent = isDm
     ? 'Arkadaslar, istekler ve sosyal akis burada.'
     : 'Sunucudaki uyeleri incele veya profilden DM baslat.';
@@ -4136,9 +4144,10 @@ function renderDmList() {
     <div class="social-mobile-shell">
       <section class="social-mobile-toolbar">
         <div class="social-mobile-head">
-          <div>
+          <div></div>
+          <div class="social-mobile-title-wrap">
             <div class="social-mobile-title">Arkadaslar</div>
-            <div class="report-meta">${social.friends.length} arkadas, ${social.incomingRequests.length} gelen istek</div>
+            <div class="social-mobile-subtitle">${currentUser || 'Topluluk'}</div>
           </div>
           <div class="social-mobile-actions">
             <button id="socialUtilityBtn" class="social-mobile-icon" title="Sosyal Ayarlar">&#9881;</button>
@@ -4146,7 +4155,9 @@ function renderDmList() {
           </div>
         </div>
         <div class="social-filter-row">${filterButtons}</div>
-        <button id="mobileFriendAddBtn" class="social-add-btn">+ Arkadas Ekle</button>
+        <div class="social-toolbar-actions">
+          <button id="mobileFriendAddBtn" class="social-add-btn">+ Arkadas Ekle</button>
+        </div>
       </section>
       ${sections.join('') || '<div class="social-empty-state">Bu filtre icin gosterilecek kisi yok.</div>'}
     </div>
