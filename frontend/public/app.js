@@ -3233,6 +3233,7 @@ function renderCallOverlay() {
   const hasCall = Boolean(localStream || participants.length || remoteStreams.size || activeCallChannelId);
   const hasAudioTrack = Boolean(getActiveTrack(localStream, 'audio'));
   const hasVideoTrack = Boolean(getActiveTrack(localStream, 'video'));
+  const mobileCallUi = isMobileView();
   const cameraOnCount = tiles.filter((tile) => tile.hasVideo).length;
   const audioOnCount = tiles.filter((tile) => tile.hasAudio).length;
   const galleryLayoutClass = tiles.length <= 1
