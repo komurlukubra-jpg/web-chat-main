@@ -4885,6 +4885,10 @@
 
       .sidebar.sidebar-social-mode .sidebar-panel-main {
         padding: calc(10px + env(safe-area-inset-top)) 14px calc(110px + env(safe-area-inset-bottom));
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        overflow: hidden;
       }
 
       .sidebar.sidebar-social-mode .social-mobile-shell {
@@ -5007,12 +5011,13 @@
 
       .sidebar.sidebar-social-mode .social-pane-body {
         min-height: 44vh;
-      }
-
-      .sidebar.sidebar-social-mode .social-pane-body {
         display: grid;
         align-content: start;
         flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        padding-bottom: 8px;
+        -webkit-overflow-scrolling: touch;
       }
 
       .sidebar.sidebar-social-mode .social-compact-row {

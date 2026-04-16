@@ -3009,6 +3009,7 @@ function renderMobileLayout() {
   }
   setMobileView(isMobileView() ? mobileView : 'chat');
   mobileWorkspaceBtn.innerHTML = isMobileView() && mobileView !== 'chat' ? '&#10005;' : '&#9776;';
+  syncSocialMobileMode();
 }
 
 function renderChannels() {
