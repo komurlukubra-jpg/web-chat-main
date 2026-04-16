@@ -67,6 +67,7 @@ const remoteStreams = new Map();
 let lastCallCapabilityMessage = '';
 let callOverlayOpen = false;
 let focusedCallTileKey = 'self';
+let callParticipantsSheetOpen = false;
 let preferredLoginIdentifier = '';
 const makingOffer = new Map();
 const ignoredOffer = new Map();
@@ -107,6 +108,8 @@ const callOverlayCameraBtn = document.getElementById('callOverlayCameraBtn');
 const callOverlayEndBtn = document.getElementById('callOverlayEndBtn');
 const callOverlayCloseBtn = document.getElementById('callOverlayCloseBtn');
 const callOverlayMinimizeBtn = document.getElementById('callOverlayMinimizeBtn');
+const callOverlayPeopleBtn = document.getElementById('callOverlayPeopleBtn');
+const callSheetScrim = document.getElementById('callSheetScrim');
 const createServerBtn = document.getElementById('createServerBtn');
 const createCategoryBtn = document.getElementById('createCategoryBtn');
 const createChannelBtn = document.getElementById('createChannelBtn');
@@ -946,6 +949,7 @@ function renderCallOverlay() {
   const hasCall = Boolean(localStream || participants.length || remoteStreams.size || activeCallChannelId);
   const hasAudioTrack = Boolean(getActiveTrack(localStream, 'audio'));
   const hasVideoTrack = Boolean(getActiveTrack(localStream, 'video'));
+  const mobileCallUi = isMobileView();
   const cameraOnCount = tiles.filter((tile) => tile.hasVideo).length;
   const audioOnCount = tiles.filter((tile) => tile.hasAudio).length;
   const galleryLayoutClass = tiles.length <= 1
@@ -1082,13 +1086,17 @@ function renderCallOverlay() {
 
 function openCallOverlay() {
   callOverlayOpen = true;
+  callParticipantsSheetOpen = false;
   renderCallOverlay();
 }
 
 function closeCallOverlay(options = {}) {
   callOverlayOpen = false;
+  callParticipantsSheetOpen = false;
   callOverlay.classList.add('hidden');
   callOverlay.setAttribute('aria-hidden', 'true');
+  callOverlay.classList.remove('call-mobile-ui', 'call-members-open');
+  callSheetScrim?.classList.add('hidden');
   document.body.classList.remove('call-open');
   if (options.minimized) {
     showToast('Cagri arka planda acik kaldi. Video dugmesi ile tekrar buyutebilirsin.');
@@ -3241,8 +3249,12 @@ function renderCallOverlay() {
     ? `Voice / ${callChannel.name}`
     : 'Sesli Oda Sec';
   callOverlayMeta.textContent = callChannel
-    ? `${Math.max(participants.length, tiles.length || 1)} kisi | ${cameraOnCount} kamera | ${audioOnCount} mikrofon`
+    ? `${Math.max(participants.length, tiles.length || 1)} kisi ${mobileCallUi ? '•' : '|'} ${cameraOnCount} kamera ${mobileCallUi ? '•' : '|'} ${audioOnCount} mikrofon`
     : 'Once bir sesli odaya katil, sonra kamerayi baslat.';
+
+  if (!mobileCallUi) {
+    callParticipantsSheetOpen = false;
+  }
 
   callOverlayStatus.textContent = hasCall
     ? (lastCallCapabilityMessage || 'Goruntulu konusma aktif. Galeri yerlesiminde tum katilimcilari ayni anda takip edebilirsin.')
@@ -3255,23 +3267,35 @@ function renderCallOverlay() {
     : 'Yerel kamera henuz baglanmadi. Kamera izni verip tekrar dene.';
 
   callOverlayJoinBtn.disabled = !callChannel || currentVoiceChannelId === callChannel.id;
-  callOverlayJoinBtn.textContent = callChannel && currentVoiceChannelId === callChannel.id ? 'Voice Odadasin' : 'Voice Katil';
+  callOverlayJoinBtn.textContent = mobileCallUi
+    ? (callChannel && currentVoiceChannelId === callChannel.id ? 'Odada' : 'Katil')
+    : (callChannel && currentVoiceChannelId === callChannel.id ? 'Voice Odadasin' : 'Voice Katil');
   callOverlayStartBtn.disabled = !callChannel;
   callOverlayMicBtn.disabled = !hasAudioTrack;
   callOverlayCameraBtn.disabled = false;
   callOverlayEndBtn.disabled = !hasCall;
 
-  callOverlayMicBtn.textContent = hasAudioTrack ? (micEnabled ? 'Mikrofon Acik' : 'Mikrofon Kapali') : 'Mikrofon Yok';
-  callOverlayCameraBtn.textContent = hasVideoTrack ? (cameraEnabled ? 'Kamera Acik' : 'Kamera Kapali') : 'Kamerayi Ac';
+  callOverlayStartBtn.textContent = mobileCallUi ? (hasVideoTrack && cameraEnabled ? 'Canli' : 'Video') : 'Goruntulu Baslat';
+  callOverlayMicBtn.textContent = mobileCallUi
+    ? (hasAudioTrack ? (micEnabled ? 'Ses' : 'Mute') : 'Ses')
+    : (hasAudioTrack ? (micEnabled ? 'Mikrofon Acik' : 'Mikrofon Kapali') : 'Mikrofon Yok');
+  callOverlayCameraBtn.textContent = mobileCallUi
+    ? (hasVideoTrack ? 'Cam' : 'Kamera')
+    : (hasVideoTrack ? (cameraEnabled ? 'Kamera Acik' : 'Kamera Kapali') : 'Kamerayi Ac');
+  callOverlayEndBtn.textContent = mobileCallUi ? 'Bitir' : 'Cagriyi Bitir';
   callOverlayMicBtn.className = `call-dock-btn ${hasAudioTrack ? (micEnabled ? 'active' : 'muted') : ''}`.trim();
   callOverlayCameraBtn.className = `call-dock-btn ${hasVideoTrack ? (cameraEnabled ? 'active' : 'muted') : 'primary'}`.trim();
+  if (callOverlayPeopleBtn) {
+    callOverlayPeopleBtn.textContent = 'Kisiler';
+    callOverlayPeopleBtn.classList.toggle('active', callParticipantsSheetOpen);
+  }
 
   if (!focusedTile) {
     callStage.innerHTML = `
       <div class="call-stage-card placeholder">
         <div class="call-empty-big">
-          <strong>Canli sahne hazir</strong>
-          <p>${escapeHtml(lastCallCapabilityMessage || 'Sesli odaya katilip Video Ac dugmesine bastiginda cagri galerisi burada acilir.')}</p>
+          <strong>${mobileCallUi ? 'Canli sahne hazir' : 'Canli sahne hazir'}</strong>
+          <p>${escapeHtml(lastCallCapabilityMessage || 'Sesli odaya katilip Video dugmesine bastiginda cagri galerisi burada acilir.')}</p>
         </div>
       </div>
     `;
@@ -3280,6 +3304,9 @@ function renderCallOverlay() {
     callOverlay.classList.toggle('hidden', !callOverlayOpen);
     callOverlay.setAttribute('aria-hidden', String(!callOverlayOpen));
     document.body.classList.toggle('call-open', callOverlayOpen);
+    callOverlay.classList.toggle('call-mobile-ui', mobileCallUi);
+    callOverlay.classList.toggle('call-members-open', mobileCallUi && callParticipantsSheetOpen);
+    callSheetScrim?.classList.toggle('hidden', !(mobileCallUi && callParticipantsSheetOpen));
     return;
   }
 
@@ -3357,6 +3384,9 @@ function renderCallOverlay() {
   callOverlay.classList.toggle('hidden', !callOverlayOpen);
   callOverlay.setAttribute('aria-hidden', String(!callOverlayOpen));
   document.body.classList.toggle('call-open', callOverlayOpen);
+  callOverlay.classList.toggle('call-mobile-ui', mobileCallUi);
+  callOverlay.classList.toggle('call-members-open', mobileCallUi && callParticipantsSheetOpen);
+  callSheetScrim?.classList.toggle('hidden', !(mobileCallUi && callParticipantsSheetOpen));
 }
 
 function upsertServerState(serverData) {
@@ -3722,6 +3752,18 @@ window.onload = () => {
   callOverlayMicBtn.onclick = toggleMic;
   callOverlayCameraBtn.onclick = toggleCamera;
   callOverlayEndBtn.onclick = endVideoCall;
+  if (callOverlayPeopleBtn) {
+    callOverlayPeopleBtn.onclick = () => {
+      callParticipantsSheetOpen = !callParticipantsSheetOpen;
+      renderCallOverlay();
+    };
+  }
+  if (callSheetScrim) {
+    callSheetScrim.onclick = () => {
+      callParticipantsSheetOpen = false;
+      renderCallOverlay();
+    };
+  }
   callOverlayCloseBtn.onclick = () => closeCallOverlay({ minimized: Boolean(activeCallChannelId || localStream) });
   callOverlayMinimizeBtn.onclick = () => closeCallOverlay({ minimized: Boolean(activeCallChannelId || localStream) });
   searchBtn.onclick = showSearchModal;
