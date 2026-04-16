@@ -4628,6 +4628,25 @@
         background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.32), rgba(var(--accent-rgb), 0.14));
       }
 
+      .sidebar.sidebar-social-mode #callPanelSection,
+      .sidebar.sidebar-social-mode .utility-panel {
+        display: none !important;
+      }
+
+      .sidebar.sidebar-social-mode .sidebar-panel:first-child {
+        background: transparent;
+        border: 0;
+        box-shadow: none;
+      }
+
+      .sidebar.sidebar-social-mode .sidebar-heading {
+        display: none;
+      }
+
+      .sidebar.sidebar-social-mode .sidebar-panel-main {
+        padding-top: 0;
+      }
+
       .sidebar-panel {
         border-radius: 22px;
       }
@@ -4668,6 +4687,128 @@
       .dm-row {
         display: grid;
         gap: 8px;
+      }
+
+      .social-mobile-shell {
+        display: grid;
+        gap: 12px;
+      }
+
+      .social-mobile-toolbar {
+        display: grid;
+        gap: 10px;
+        padding: 14px;
+        border-radius: 20px;
+        background: var(--mobile-surface);
+        border: 1px solid var(--mobile-outline);
+        box-shadow: var(--mobile-shadow-soft);
+      }
+
+      .social-mobile-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .social-mobile-title {
+        font-size: 20px;
+        font-weight: 800;
+        letter-spacing: -0.03em;
+      }
+
+      .social-mobile-actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      .social-mobile-icon {
+        width: 38px;
+        height: 38px;
+        border-radius: 14px;
+        border: 1px solid var(--mobile-outline);
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--text);
+      }
+
+      .social-add-btn {
+        min-height: 42px;
+        padding: 0 14px;
+        border: 0;
+        border-radius: 14px;
+        background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.96), rgba(var(--accent-rgb), 0.72));
+        color: #fff;
+        font-size: 13px;
+        font-weight: 800;
+        box-shadow: 0 10px 20px rgba(var(--accent-rgb), 0.24);
+      }
+
+      .social-filter-row {
+        display: flex;
+        gap: 8px;
+        overflow-x: auto;
+        padding-bottom: 2px;
+        scrollbar-width: none;
+      }
+
+      .social-filter-row::-webkit-scrollbar {
+        display: none;
+      }
+
+      .social-filter-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 38px;
+        padding: 0 14px;
+        border-radius: 999px;
+        border: 1px solid var(--mobile-outline);
+        background: rgba(255, 255, 255, 0.03);
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      .social-filter-chip.active {
+        background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.32), rgba(var(--accent-rgb), 0.14));
+        color: var(--text);
+        border-color: rgba(var(--accent-rgb), 0.28);
+      }
+
+      .social-filter-chip .social-filter-count {
+        display: inline-grid;
+        place-items: center;
+        min-width: 20px;
+        height: 20px;
+        padding: 0 6px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--text);
+        font-size: 11px;
+      }
+
+      .social-section-card {
+        display: grid;
+        gap: 10px;
+        padding: 14px;
+        border-radius: 20px;
+        background: var(--mobile-surface);
+        border: 1px solid var(--mobile-outline);
+        box-shadow: var(--mobile-shadow-soft);
+      }
+
+      .social-section-card strong {
+        font-size: 15px;
+      }
+
+      .social-empty-state {
+        padding: 24px 18px;
+        border-radius: 20px;
+        text-align: center;
+        background: var(--mobile-surface);
+        border: 1px dashed var(--mobile-outline);
+        color: var(--muted);
       }
 
       .dm-user {
@@ -4901,7 +5042,7 @@
         </section>
         <div class="member-tabs">
           <button id="membersTabBtn" class="member-tab active">Uyeler</button>
-          <button id="dmTabBtn" class="member-tab">DM</button>
+          <button id="dmTabBtn" class="member-tab">Sosyal</button>
         </div>
       </section>
 

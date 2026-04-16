@@ -58,6 +58,7 @@ let localStream = null;
 let audioContext = null;
 let notificationsEnabled = false;
 let mobileView = 'chat';
+let mobileSocialFilter = 'friends';
 let replyTarget = null;
 let shouldReconnect = true;
 let pendingAttachments = [];
@@ -1801,8 +1802,9 @@ function renderSidebarTab() {
   dmTabBtn.classList.toggle('active', isDm);
   memberList.classList.toggle('hidden', isDm);
   dmList.classList.toggle('hidden', !isDm);
+  sidebar.classList.toggle('sidebar-social-mode', isDm && isMobileView());
   mobilePeopleSummary.textContent = isDm
-    ? 'Direkt mesaj kisilerini ac ve sohbete don.'
+    ? 'Arkadaslar, istekler ve sosyal akis burada.'
     : 'Sunucudaki uyeleri incele veya profilden DM baslat.';
   renderDmList();
 }
@@ -3920,12 +3922,85 @@ function buildSocialSectionMarkup(title, subtitle, body) {
     return '';
   }
   return `
-    <div class="report-card">
+    <section class="social-section-card">
       <strong>${escapeHtml(title)}</strong>
       <div class="report-meta">${escapeHtml(subtitle)}</div>
-    </div>
-    ${body}
+      <div class="social-section-body">
+        ${body}
+      </div>
+    </section>
   `;
+}
+
+function showAddFriendModal() {
+  const social = getSocialState();
+  const friendSet = new Set(social.friends.map((item) => item.username));
+  const incomingSet = new Set(social.incomingRequests.map((item) => item.username));
+  const outgoingSet = new Set(social.outgoingRequests.map((item) => item.username));
+  const blockedSet = new Set(social.blockedUsers);
+  const candidates = appState.users
+    .filter((user) => (
+      user.username !== currentUser
+      && !friendSet.has(user.username)
+      && !incomingSet.has(user.username)
+      && !outgoingSet.has(user.username)
+      && !blockedSet.has(user.username)
+    ))
+    .sort(sortUsersForSocialList);
+
+  if (!candidates.length) {
+    showModal(`
+      <h2>Arkadas Ekle</h2>
+      <div class="report-card">
+        <strong>Hazir aday yok</strong>
+        <div class="report-meta">Su an arkadaslik istegi gonderebilecegin yeni bir kullanici gorunmuyor.</div>
+      </div>
+    `);
+    return;
+  }
+
+  showModal(`
+    <h2>Arkadas Ekle</h2>
+    <div class="report-card">
+      <strong>Kisi Sec</strong>
+      <div class="report-meta">Listeden bir kullanici secip tek dokunusla arkadaslik istegi gonderebilirsin.</div>
+    </div>
+    <div style="display:grid; gap:10px;">
+      ${candidates.map((user) => `
+        <div class="dm-row">
+          <button class="dm-user" data-open-profile="${escapeHtml(user.username)}">
+            <span class="dm-user-top">
+              <span class="dm-user-head">
+                ${avatarMarkup(user.username, 'member-avatar')}
+                <span class="dm-name-wrap">
+                  <strong>${escapeHtml(user.username)}</strong>
+                  <span class="report-meta">${user.privacy?.dmPolicy === 'friends' ? 'Sadece arkadaslar DM atabilir' : 'Profil acik ve gorulebilir'}</span>
+                </span>
+              </span>
+            </span>
+          </button>
+          <button class="mini-action-btn" data-add-friend="${escapeHtml(user.username)}">Istek Gonder</button>
+        </div>
+      `).join('')}
+    </div>
+  `);
+
+  modal.querySelectorAll('[data-open-profile]').forEach((button) => {
+    button.onclick = () => showUserProfile(button.dataset.openProfile);
+  });
+
+  modal.querySelectorAll('[data-add-friend]').forEach((button) => {
+    button.onclick = async () => {
+      try {
+        await sendFriendRequestTo(button.dataset.addFriend);
+        showToast('Arkadaslik istegi gonderildi.');
+        hideModal();
+        renderDmList();
+      } catch (error) {
+        alert(error.message);
+      }
+    };
+  });
 }
 
 function renderDmList() {
@@ -3948,71 +4023,148 @@ function renderDmList() {
     && !outgoingSet.has(user.username)
     && !blockedSet.has(user.username)
   ));
+  const onlineUsers = users.filter((user) => (
+    !blockedSet.has(user.username)
+    && (appState.presence[user.username]?.status || 'offline') !== 'offline'
+  ));
+  const visibleUsers = users.filter((user) => !blockedSet.has(user.username));
 
-  membersPanelTitle.textContent = 'Sosyal';
+  membersPanelTitle.textContent = 'Arkadaslar';
   membersPanelSubtitle.textContent = `${social.friends.length} arkadas • ${social.incomingRequests.length} gelen istek`;
-  membersCountPill.textContent = String(social.friends.length + social.incomingRequests.length);
+  membersCountPill.textContent = String(social.friends.length);
+
+  const filterCounts = {
+    friends: friendUsers.length,
+    online: onlineUsers.length,
+    all: visibleUsers.length,
+    pending: incomingUsers.length + outgoingUsers.length
+  };
+
+  if (!filterCounts[mobileSocialFilter] && mobileSocialFilter !== 'pending') {
+    mobileSocialFilter = friendUsers.length ? 'friends' : (onlineUsers.length ? 'online' : 'all');
+  }
 
   const sections = [];
 
-  if (friendUsers.length) {
-    sections.push(buildSocialSectionMarkup(
-      'Arkadaslar',
-      'DM acabilir veya profilden islemler yapabilirsin.',
-      friendUsers.map((user) => buildSocialRowMarkup(user.username, {
-        actionLabel: 'Profil'
-      })).join('')
-    ));
+  if (mobileSocialFilter === 'friends') {
+    if (friendUsers.length) {
+      sections.push(buildSocialSectionMarkup(
+        'Arkadaslar',
+        'DM acabilir veya profilden islemler yapabilirsin.',
+        friendUsers.map((user) => buildSocialRowMarkup(user.username, {
+          actionLabel: 'Profil'
+        })).join('')
+      ));
+    }
+  } else if (mobileSocialFilter === 'online') {
+    if (onlineUsers.length) {
+      sections.push(buildSocialSectionMarkup(
+        'Cevrimici',
+        'Su an aktif olan kisiler.',
+        onlineUsers.map((user) => buildSocialRowMarkup(user.username, {
+          preview: hasDmAccess(user.username)
+            ? 'Hemen DM acabilir veya profilini inceleyebilirsin.'
+            : 'Profili acip sosyal durumunu gorebilirsin.',
+          actionLabel: hasDmAccess(user.username) ? 'Profil' : 'Incele',
+          openMode: hasDmAccess(user.username) ? 'dm' : 'profile'
+        })).join('')
+      ));
+    }
+  } else if (mobileSocialFilter === 'all') {
+    if (visibleUsers.length) {
+      sections.push(buildSocialSectionMarkup(
+        'Tum Kisiler',
+        'Arkadaslar, kesfedilecek kisiler ve sosyal durumlar.',
+        visibleUsers.map((user) => buildSocialRowMarkup(user.username, {
+          preview: friendSet.has(user.username)
+            ? 'Arkadas listende bulunuyor.'
+            : incomingSet.has(user.username)
+              ? 'Sana istek gonderdi.'
+              : outgoingSet.has(user.username)
+                ? 'Istek beklemede.'
+                : user.privacy?.dmPolicy === 'friends'
+                  ? 'Sadece arkadaslardan DM aliyor.'
+                  : 'Profili acip arkadas ekleyebilirsin.',
+          actionLabel: friendSet.has(user.username) || hasDmAccess(user.username) ? 'Profil' : 'Incele',
+          openMode: friendSet.has(user.username) && hasDmAccess(user.username) ? 'dm' : 'profile'
+        })).join('')
+      ));
+    }
+  } else if (mobileSocialFilter === 'pending') {
+    if (incomingUsers.length) {
+      sections.push(buildSocialSectionMarkup(
+        'Gelen Istekler',
+        'Istekleri kabul et veya reddet.',
+        incomingUsers.map((user) => buildSocialRowMarkup(user.username, {
+          preview: 'Sana arkadaslik istegi gonderdi.',
+          actionLabel: 'Kabul Et',
+          openMode: 'profile',
+          extraButtons: `
+            <button class="mini-action-btn" data-social-action="accept" data-username="${user.username}">Kabul</button>
+            <button class="mini-action-btn" data-social-action="decline" data-username="${user.username}">Reddet</button>
+          `
+        })).join('')
+      ));
+    }
+
+    if (outgoingUsers.length) {
+      sections.push(buildSocialSectionMarkup(
+        'Bekleyen Istekler',
+        'Karsi tarafin cevabi bekleniyor.',
+        outgoingUsers.map((user) => buildSocialRowMarkup(user.username, {
+          preview: 'Arkadaslik istegin beklemede.',
+          actionLabel: 'Profil',
+          openMode: 'profile'
+        })).join('')
+      ));
+    }
   }
 
-  if (incomingUsers.length) {
-    sections.push(buildSocialSectionMarkup(
-      'Gelen Istekler',
-      'Istekleri kabul et veya reddet.',
-      incomingUsers.map((user) => buildSocialRowMarkup(user.username, {
-        preview: 'Sana arkadaslik istegi gonderdi.',
-        actionLabel: 'Kabul Et',
-        openMode: 'profile',
-        extraButtons: `
-          <button class="mini-action-btn" data-social-action="accept" data-username="${user.username}">Kabul</button>
-          <button class="mini-action-btn" data-social-action="decline" data-username="${user.username}">Reddet</button>
-        `
-      })).join('')
-    ));
-  }
+  const filterButtons = [
+    ['friends', 'Arkadaslar'],
+    ['online', 'Cevrimici'],
+    ['all', 'Tumu'],
+    ['pending', 'Bekleyen']
+  ].map(([key, label]) => `
+    <button class="social-filter-chip ${mobileSocialFilter === key ? 'active' : ''}" data-social-filter="${key}">
+      <span>${label}</span>
+      <span class="social-filter-count">${filterCounts[key] || 0}</span>
+    </button>
+  `).join('');
 
-  if (outgoingUsers.length) {
-    sections.push(buildSocialSectionMarkup(
-      'Giden Istekler',
-      'Karsi tarafin cevabi bekleniyor.',
-      outgoingUsers.map((user) => buildSocialRowMarkup(user.username, {
-        preview: 'Arkadaslik istegin beklemede.',
-        actionLabel: 'Profil',
-        openMode: 'profile'
-      })).join('')
-    ));
-  }
+  dmList.innerHTML = `
+    <div class="social-mobile-shell">
+      <section class="social-mobile-toolbar">
+        <div class="social-mobile-head">
+          <div>
+            <div class="social-mobile-title">Arkadaslar</div>
+            <div class="report-meta">${social.friends.length} arkadas, ${social.incomingRequests.length} gelen istek</div>
+          </div>
+          <div class="social-mobile-actions">
+            <button id="socialUtilityBtn" class="social-mobile-icon" title="Sosyal Ayarlar">&#9881;</button>
+            <button id="socialMembersBtn" class="social-mobile-icon" title="Uyeler">&#128101;</button>
+          </div>
+        </div>
+        <div class="social-filter-row">${filterButtons}</div>
+        <button id="mobileFriendAddBtn" class="social-add-btn">+ Arkadas Ekle</button>
+      </section>
+      ${sections.join('') || '<div class="social-empty-state">Bu filtre icin gosterilecek kisi yok.</div>'}
+    </div>
+  `;
 
-  if (discoverUsers.length) {
-    sections.push(buildSocialSectionMarkup(
-      'Kisiler',
-      'Profilden arkadas ekle veya uygun ise DM baslat.',
-      discoverUsers.map((user) => buildSocialRowMarkup(user.username, {
-        preview: user.privacy?.dmPolicy === 'friends'
-          ? 'Sadece arkadaslardan DM aliyor.'
-          : 'Profili acip arkadaslik veya DM baslatabilirsin.',
-        actionLabel: hasDmAccess(user.username) ? 'Profil' : 'Incele',
-        openMode: hasDmAccess(user.username) ? 'dm' : 'profile'
-      })).join('')
-    ));
-  }
+  document.getElementById('mobileFriendAddBtn')?.addEventListener('click', showAddFriendModal);
+  document.getElementById('socialUtilityBtn')?.addEventListener('click', showUtilityHub);
+  document.getElementById('socialMembersBtn')?.addEventListener('click', () => {
+    activeSidebarTab = 'members';
+    renderSidebarTab();
+  });
 
-  if (!sections.length) {
-    dmList.innerHTML = '<div class="empty-state">Henuz sosyal liste olusmadi.</div>';
-    return;
-  }
-
-  dmList.innerHTML = sections.join('');
+  dmList.querySelectorAll('[data-social-filter]').forEach((button) => {
+    button.onclick = () => {
+      mobileSocialFilter = button.dataset.socialFilter;
+      renderDmList();
+    };
+  });
 
   dmList.querySelectorAll('.dm-user').forEach((button) => {
     button.onclick = () => {
